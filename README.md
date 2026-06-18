@@ -17,10 +17,23 @@ Automated job application & outreach platform.
 | 9 | Apify API token | 🔲 | Sign up at apify.com |
 | 10 | Hunter.io API key | 🔲 | Sign up at hunter.io |
 
+## Phase 1 — Database & Dashboard
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 1 | Database schema (15 tables) | ✅ | jobs, applications, interviews, offers, contacts, email_sequences, company_research, cv_templates, visa_tracker, certifications_tracker, analytics_daily, content_queue, daily_tasks, system_health, prompt_performance |
+| 2 | Row-level security | ✅ | RLS enabled + policies on all user-specific tables |
+| 3 | Performance indexes | ✅ | 14 indexes on foreign keys + query columns |
+| 4 | pg_cron GDPR purge | ✅ | 90-day auto-purge of stale data |
+| 5 | Next.js scaffold | ✅ | TypeScript + Tailwind CSS + shadcn/ui |
+| 6 | Dashboard pages | ✅ | 12 routes: /, pipeline, jobs, outreach, interviews, offers, visas, certs, analytics, settings/health, settings/cv-tracks |
+| 7 | Notion-inspired UI | ✅ | Warm paper (#f6f5f4) canvas, blue (#0075de) accent, Inter font |
+| 8 | Supabase client | ✅ | Connected via @supabase/supabase-js |
+
 ## Stack
 
-- **Frontend**: Next.js 14 + Tailwind CSS + shadcn/ui (Cloudflare Pages)
-- **Backend**: Cloudflare Workers
+- **Frontend**: Next.js 16 + Tailwind CSS v4 + shadcn/ui
+- **Backend**: Cloudflare Workers (Phase 2)
 - **Database**: Supabase PostgreSQL
 - **Storage**: Cloudflare R2
 - **LLM**: Gemini 2.0 Flash (primary), Groq (fast inference), Hermes 3 (local)
