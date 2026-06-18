@@ -1,0 +1,17 @@
+node_modules/
+.next/
+.env
+.env.local
+.dev.vars
+*.secret
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+
+.mcp/config.json
+.mcp/credentials.json.opencode/opencode.json
+.env
+.env.local
+.dev.vars
+*.secret

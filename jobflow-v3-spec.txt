@@ -1,0 +1,560 @@
+JOBFLOW Automated Job Application &amp; Outreach Platform v3.0 Ч Complete Technical Specification Najd Salhi Ј 2025 Ј Written with all engineering constraints known from day one Executive Summary JobFlow is a self-hosted automated job application and outreach platform.
+It discovers job listings across 5 EU countries daily, generates tailored CVs and cover letters, sequences cold email outreach, manages replies, tracks visa applications, and prepares for interviews.
+The operator spends 30-45 minutes per day reviewing and approving AI-generated output.
+Everything else runs autonomously.
+WHO IT IS FOR A non-EU candidate applying to entry-level sales, customer success, and multilingual roles across Poland, Romania, Malta, Germany, and the Netherlands.
+Needs to apply to 25-40 companies per day while working full time.
+Cannot afford manual job hunting at that volume.
+TOTAL MONTHLY COST Service Role Cost Hetzner CAX11 Compute backbone Ч n8n, Hermes, Puppeteer, agents А4.51/month Cloudflare Pages + Workers Frontend + API + cron triggers Free Supabase PostgreSQL database + auth + realtime Free Cloudflare R2 PDF storage + weekly backups Free (under 10GB) Gemini 2.0 Flash API Primary LLM Ч CV generation, cover letters, emails Free tier / $0.075/1M tokens Groq API Fast inference Ч scoring, classification, detection Free tier Hermes 3 (self-hosted) Offline inference on Hetzner Ч no API cost Free n8n (self-hosted) Workflow orchestration on Hetzner Free Resend.com Transactional email + outreach sending Free (3k/month) Hunter.io Email address discovery Free (25/month) Google Calendar API Interview scheduling Free Telegram Bot API Notifications Free TOTAL ~А5/month TIMELINE 12 weeks part-time to full platform.
+2 weeks per phase, 6 phases.
+Deployable and useful from end of Phase 2.
+WHAT HAPPENS EACH DAY Ч THE 45-MINUTE LOOP 07:00 Ч Cron discovers jobs across 6 boards, scores them, queues top results.
+08:00 Ч Agents generate CVs and cover letters for queued jobs.
+08:30 Ч Daily task list compiled and sent to Telegram.
+You open the dashboard and work through: approve cover letters, fill in the personal hook sentence, submit applications, send queued LinkedIn connections, approve engagement comments.
+09:00 Ч Cold email sequences fire automatically.
+Replies surface in Telegram within minutes.
+You draft responses from AI-generated options.
+Done.
+Table of Contents ? Section 1 Ч Stack: Every Service, Why It Was Chosen, Free Tier Limits ? Section 2 Ч Hetzner Server: What Runs There and Why ? Section 3 Ч Agent Architecture: Hermes, Gemini, Groq, n8n ? Section 4 Ч Database Schema: All Tables, Columns, Indexes, RLS ? Section 5 Ч Module 1: Job Discovery Engine ? Section 6 Ч Module 2: Company Research Engine ? Section 7 Ч Module 3: Application Generator ? Section 8 Ч Module 4: Cold Outreach Engine ? Section 9 Ч Module 5: Reply Handler ? Section 10 Ч Module 6: LinkedIn &amp; Content Engine ? Section 11 Ч Module 7: Daily Task Manager ? Section 12 Ч Prompt Library: All Prompts ? Section 13 Ч Human-Feel Layer: Anti-Detection Engineering ? Section 14 Ч Country-Specific Engineering ? Section 15 Ч New Features: Interview Prep, Visa Tracker, Offers, Network Mapping ? Section 16 Ч Intelligence Layer: Learning, Feedback, Prediction ? Section 17 Ч Day in the Life: Minute-by-Minute ? Section 18 Ч Design System: Platform UI + Landing Page ? Section 19 Ч OpenCode Build Guide: Prompts, Attachments, MCP Actions ? Section 20 Ч Build Sequence &amp; Timeline ? Section 21 Ч Glossary ? Appendix Ч All 73 Forensic Findings Reference Table Section 1 Ч Stack Every service is free or self-hosted unless noted.
+Paid alternatives listed where applicable.
+The $5/month Hetzner server replaces every paid SaaS that can be self-hosted.
+Compute Ч Hetzner CAX11 What: ARM-based VPS.
+2 vCPU, 4GB RAM, 40GB SSD, 20TB traffic Why: Cheapest server with enough RAM to run n8n + Hermes 3 4B quantized + Puppeteer simultaneously Cost: А4.51/month Hosts: n8n, Hermes 3, Puppeteer/PDF service, portal auto-fill service, Ollama runtime Alternative: Fly.io free tier (limited), Render free tier (spins down Ч unsuitable for cron jobs) Frontend Hosting Ч Cloudflare Pages What: Static site hosting with global CDN Why: Free, unlimited bandwidth, deploys from GitHub push, custom domain included Free tier: Unlimited requests, unlimited bandwidth, 500 builds/month Hosts: Next.js dashboard API / Backend Ч Cloudflare Workers What: Serverless V8 isolate runtime, 0ms cold start Why: Free 100k requests/day, no server needed for API routes and webhooks Free tier: 100k requests/day, 10ms CPU per request Handles: Webhook receivers, cron triggers, R2 file operations Database Ч Supabase What: Hosted PostgreSQL with realtime, auth, and edge functions Why: Best free PostgreSQL host.
+Realtime subscriptions power live dashboard.
+RLS handles multi-user from day one.
+Free tier: 500MB storage, unlimited API calls, 50MB file storage pg_cron: Runs SQL on schedule inside Postgres Ч handles all timed jobs File Storage Ч Cloudflare R2 What: S3-compatible object storage Why: Free 10GB storage, free 1M reads/month.
+Stores all generated PDFs and weekly backups.
+Free tier: 10GB storage, 1M Class A operations/month, 10M Class B operations/month Primary LLM Ч Gemini 2.0 Flash (Google AI) What: Google&apos;s fastest multimodal model via API Why: Free tier covers months of usage.
+1M tokens/day free.
+$0.075/1M tokens paid Ч 10x cheaper than Claude Sonnet.
+Free tier: 1M tokens/day, 15 requests/minute Used for: CV generation, cover letters, email personalization, reply drafting, interview prep API: api.google.com/generativelanguage Ч OpenAI-compatible wrapper available Fast Inference Ч Groq What: LPU-based inference, extremely fast, free tier Why: Free, fast, good at classification and structured output.
+Runs Llama 3.1 8B and Gemma 2 9B.
+Free tier: 14,400 requests/day, 6,000 tokens/minute Used for: Job scoring, language detection, sensitivity checks, OOO classification, sentiment analysis Local Inference Ч Hermes 3 via Ollama (self-hosted on Hetzner) What: Hermes 3 4B quantized running locally via Ollama on the Hetzner server Why: Zero API cost for high-volume repetitive tasks.
+No internet dependency.
+No rate limits.
+Cost: Zero Ч runs on the А4.51 Hetzner server Used for: Bulk job scoring batches, duplicate detection, keyword extraction, content moderation pre-filter Model: Hermes 3 4B Q4_K_M (2.5GB RAM) Ч fits within Hetzner CAX11 4GB RAM Workflow Orchestration Ч n8n (self-hosted on Hetzner) What: Open-source workflow automation platform Why: Free self-hosted, 400+ integrations, visual workflow editor, handles all cron jobs and pipeline orchestration Cost: Zero Ч runs on Hetzner Handles: All 8 scheduled cron workflows, webhook routing, agent orchestration Email Sending Ч Resend.com What: Developer-first transactional email API Why: Best deliverability on free tier.
+3,000 emails/month free.
+Clean API.
+Free tier: 3,000 emails/month, 100/day Used for: Cold outreach sequences, follow-ups, application confirmations Paid upgrade: $20/month for 50,000 emails Ч needed at scale Email Discovery Ч Hunter.io What: Email address finder by company domain Why: Most reliable free tier for finding decision-maker emails Free tier: 25 searches/month, 50 verifications/month Alternative: Apollo.io free (50 credits/month), manual LinkedIn extraction Job Board Scraping Ч Apify What: Cloud scraping platform with pre-built actors for all major job boards Why: Free $5 compute units/month covers daily scraping of 6 boards at target volume Free tier: $5 compute units/month Ч approximately 5,000 job listings scraped Alternative: Self-hosted Playwright on Hetzner for boards without Apify actors Notifications Ч Telegram Bot API What: Telegram bot for push notifications and interactive approvals Why: Free, instant, works everywhere, supports inline keyboard buttons for approve/reject actions Free tier: Unlimited Scheduling Ч Google Calendar API What: Google Calendar read/write via OAuth Why: Free.
+Powers interview slot proposals that check real availability instead of hardcoded times.
+Free tier: Unlimited for personal use CI/CD Ч GitHub Actions What: Automated deploy on push Why: Free 2,000 minutes/month.
+Auto-deploys dashboard to Cloudflare Pages, Workers to Cloudflare.
+Free tier: 2,000 minutes/month Section 2 Ч Hetzner Server The Hetzner CAX11 is the compute backbone of JobFlow.
+Everything that cannot run on Cloudflare&apos;s edge (due to memory limits, binary dependencies, or persistent processes) runs here.
+What Runs on Hetzner Service Purpose RAM Usage Why Not Cloudflare Ollama + Hermes 3 4B Local LLM inference ~2.5GB Workers have 128MB ceiling n8n Workflow orchestration ~300MB Needs persistent process + filesystem Puppeteer service HTML-to-PDF rendering ~400MB Chromium binary is 170MB Ч Workers incompatible Portal auto-fill ATS form auto-fill ~400MB Needs headed browser session Playwright scrapers Boards without Apify actors ~200MB Same as Puppeteer TOTAL ~3.8GB of 4GB Tight but workable Setup Script # Run once on fresh Hetzner CAX11 (Ubuntu 24.04) # Install Docker curl -fsSL https://get.docker.com | sh usermod -aG docker $USER # Install Ollama curl -fsSL https://ollama.ai/install.sh | sh ollama pull hermes3:4b # ~2.5GB download # Install n8n via Docker docker run -d \ --name n8n \ -p 5678:5678 \ -v n8n_data:/home/node/.n8n \ --restart unless-stopped \ n8nio/n8n # Install Node.js 20 for Puppeteer and Playwright services curl -fsSL https://deb.nodesource.com/setup_20.x | bash - apt-get install -y nodejs # Install Puppeteer dependencies npx puppeteer browsers install chrome # Expose only n8n externally (port 5678), everything else internal only ufw allow 22 # SSH ufw allow 5678 # n8n ufw enable Hermes 3 Inference API Ч Simple HTTP Wrapper Hermes 3 runs via Ollama which exposes an OpenAI-compatible API on localhost:11434.
+All internal services call it directly.
+// Internal service Ч only accessible from Hetzner localhost // POST http://localhost:11434/api/chat async function localInference(prompt, systemPrompt) { const res = await fetch(&apos;http://localhost:11434/api/chat&apos;, { method: &apos;POST&apos;, headers: { &apos;Content-Type&apos;: &apos;application/json&apos; }, body: JSON.stringify({ model: &apos;hermes3:4b&apos;, messages: [ { role: &apos;system&apos;, content: systemPrompt }, { role: &apos;user&apos;, content: prompt } ], stream: false, options: { temperature: 0.1 } // Low temp for classification tasks }) }); const data = await res.json(); return data.message.content; } // Failure mode: Ollama crashes or OOM // Handler: catch block routes to Groq free tier as fallback // Alert: Telegram notification if Hermes unavailable for &gt;5 minutes Section 3 Ч Agent Architecture JobFlow uses three tiers of AI inference.
+The decision of which tier to use is based on task complexity, latency requirements, and cost.
+Simple classification tasks run locally or on Groq free tier.
+Complex generation tasks run on Gemini 2.0 Flash.
+Multi-step reasoning with tool use runs as Claude-style agents via the Gemini API.
+Inference Tier Decision Tree Task Tier Model Why Job language detection Local Hermes 3 4B Single classification, runs 1000x/day, zero cost Job scoring Local Hermes 3 4B Bulk operation, structured JSON output, no nuance needed Sensitivity check (LinkedIn post) Local Hermes 3 4B Binary classification, runs every engagement cycle Duplicate detection Local Hermes 3 4B Embedding similarity, runs on every scraped job OOO classification Groq Llama 3.1 8B Needs to handle any language, free API Reply sentiment classification Groq Llama 3.1 8B Fast, free, accurate for sentiment Company hook generation Groq Gemma 2 9B Short creative output, free tier sufficient CV summary generation Gemini Flash gemini-2.0-flash Long-form, voice-critical, quality matters Cover letter generation Gemini Flash gemini-2.0-flash Same Ч quality over cost Email 1/2/3 generation Gemini Flash gemini-2.0-flash Personalization requires strong reasoning Reply draft generation Gemini Flash gemini-2.0-flash Tone-critical, multi-language Interview prep kit Gemini Flash gemini-2.0-flash Complex structured output Research agent (multi-step) Gemini Flash gemini-2.0-flash-exp Tool use, iterative reasoning Model Configuration Ч Single Config File // config/models.js Ч change models here without touching any other file export const MODELS = { // Local inference (Hermes 3 via Ollama on Hetzner) local: { baseURL: &apos;http://localhost:11434/api&apos;, model: &apos;hermes3:4b&apos;, // Fallback: route to Groq if Ollama is down fallback: &apos;groq&apos; }, // Groq free tier (Llama 3.1 8B, Gemma 2 9B) groq: { baseURL: &apos;https://api.groq.com/openai/v1&apos;, apiKey: process.env.GROQ_API_KEY, // Free at console.groq.com models: { fast: &apos;llama-3.1-8b-instant&apos;, quality: &apos;gemma2-9b-it&apos; } }, // Gemini 2.0 Flash (primary generation model) gemini: { baseURL: &apos;https://generativelanguage.googleapis.com/v1beta/openai&apos;, apiKey: process.env.GEMINI_API_KEY, // Free at aistudio.google.com model: &apos;gemini-2.0-flash&apos;, // Fallback: DeepSeek V3 at $0.27/1M tokens fallback: &apos;deepseek&apos; }, // DeepSeek V3 (fallback when Gemini free tier exhausted) deepseek: { baseURL: &apos;https://api.deepseek.com/v1&apos;, apiKey: process.env.DEEPSEEK_API_KEY, model: &apos;deepseek-chat&apos; } }; // Universal caller Ч handles routing and fallback automatically export async function callLLM(tier, prompt, systemPrompt, opts={}) { const config = MODELS[tier]; try { return await _call(config, prompt, systemPrompt, opts); } catch (err) { if (config.fallback) { console.warn(`${tier} failed, falling back to ${config.fallback}: ${err.message}`); return await _call(MODELS[config.fallback], prompt, systemPrompt, opts); } throw err; } } n8n as Agent Orchestrator n8n runs on Hetzner and serves as the orchestration layer.
+Each workflow in n8n is a pipeline that calls local services, external APIs, Supabase, and the Telegram bot.
+n8n handles scheduling, retries, error logging, and conditional routing between steps.
+// n8n workflow structure Ч every workflow follows this pattern // 1.
+TRIGGER: Schedule (cron) or Webhook // 2.
+FETCH: Pull required data from Supabase // 3.
+PROCESS: Call local Hermes or Groq for cheap ops // 4.
+GENERATE: Call Gemini for quality generation ops // 5.
+STORE: Write results back to Supabase // 6.
+NOTIFY: Send Telegram message with results // 7.
+ERROR HANDLER: Every node has catch ? Telegram alert + Supabase log // Retry config on every HTTP node in n8n: // Retry on Fail: true // Max Tries: 3 // Wait Between Tries: 2000ms (exponential: 2s, 4s, 8s) Research Agent Ч Multi-Step Tool Use The company research agent is the most complex component.
+It uses Gemini&apos;s function calling capability to iteratively gather company intelligence across multiple sources before generating the personalization hook.
+// Company research agent Ч runs on Gemini 2.0 Flash with tool use // Orchestrated via n8n HTTP node calling this Hetzner microservice const RESEARCH_TOOLS = [ { name: &apos;fetch_company_website&apos;, description: &apos;Fetch and extract the about/mission text from a company website&apos;, parameters: { domain: &apos;string&apos; } }, { name: &apos;fetch_google_news&apos;, description: &apos;Get recent news articles mentioning the company&apos;, parameters: { company_name: &apos;string&apos;, limit: &apos;number&apos; } }, { name: &apos;fetch_linkedin_posts&apos;, description: &apos;Get recent LinkedIn posts from company page via Apify&apos;, parameters: { domain: &apos;string&apos;, limit: &apos;number&apos; } }, { name: &apos;fetch_crunchbase&apos;, description: &apos;Get company funding stage and description from Crunchbase&apos;, parameters: { company_slug: &apos;string&apos; } }, { name: &apos;generate_hook&apos;, description: &apos;Generate the personalization hook sentence from gathered research&apos;, parameters: { about: &apos;string&apos;, recent_post: &apos;string&apos;, recent_news: &apos;string&apos;, candidate_background: &apos;string&apos; } } ]; async function runResearchAgent(domain) { // Agent decides which tools to call and in what order // It stops when it has enough data to generate a high-confidence hook // If LinkedIn is blocked, it falls back to website + news // If all sources fail, it returns a low-confidence generic hook const result = await geminiWithTools(RESEARCH_SYSTEM_PROMPT, domain, RESEARCH_TOOLS); return result; // { hook, confidence, sources_used } } Section 4 Ч Database Schema All tables are in Supabase PostgreSQL.
+Every table has user_id for multi-user support from day one.
+Row Level Security is enabled on all tables.
+company_research is the single exception Ч shared across users to avoid duplicate API calls.
+users (managed by Supabase Auth) No custom users table needed Ч Supabase Auth manages auth.users.
+All tables reference auth.users(id).
+jobs CREATE TABLE jobs ( id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE, title TEXT NOT NULL, company TEXT NOT NULL, company_domain TEXT, location TEXT, country TEXT NOT NULL, -- &apos;poland&apos;|&apos;romania&apos;|&apos;malta&apos;|&apos;germany&apos;|&apos;netherlands&apos; city TEXT, url TEXT UNIQUE NOT NULL, source TEXT NOT NULL, -- &apos;nofluffjobs&apos;|&apos;bestjobs&apos;|&apos;igamingnext&apos;|&apos;linkedin&apos;|...
+raw_description TEXT, detected_language TEXT, -- &apos;en&apos;|&apos;de&apos;|&apos;pl&apos;|&apos;ro&apos;|&apos;nl&apos; Ч detected by Hermes before scoring parsed_skills TEXT[], parsed_keywords TEXT[], cv_track INTEGER, -- 1-6, see track definitions in Section 12 ai_score INTEGER, -- 1-10 ai_score_reasoning TEXT, status TEXT DEFAULT &apos;new&apos;, -- &apos;new&apos;|&apos;queued&apos;|&apos;generating&apos;|&apos;ready&apos;|&apos;submitted&apos;|&apos;rejected&apos;|&apos;interview&apos;|&apos;offer&apos;|&apos;skip&apos; posted_date DATE, -- parsed from job listing JSON-LD posting_age_days INTEGER GENERATED ALWAYS AS (EXTRACT(DAY FROM (NOW()-posted_date::TIMESTAMP))::INTEGER) STORED, date_found TIMESTAMPTZ DEFAULT NOW(), date_submitted TIMESTAMPTZ, salary_min INTEGER, salary_max INTEGER, remote_ok BOOLEAN DEFAULT false, sponsor_confirmed BOOLEAN, portal_type TEXT, -- &apos;greenhouse&apos;|&apos;workable&apos;|&apos;lever&apos;|&apos;smartrecruiters&apos;|...
+notes TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW() ); ALTER TABLE jobs ENABLE ROW LEVEL SECURITY; CREATE POLICY jobs_own ON jobs FOR ALL TO authenticated USING (auth.uid()=user_id) WITH CHECK (auth.uid()=user_id); applications CREATE TABLE applications ( id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE, job_id UUID REFERENCES jobs(id) ON DELETE CASCADE, cv_track INTEGER NOT NULL, cv_version TEXT DEFAULT &apos;english&apos;, -- &apos;english&apos;|&apos;french&apos;|&apos;german&apos; cv_url TEXT, -- Cloudflare R2 URL cover_letter_text TEXT, cover_letter_url TEXT, personal_hook TEXT, -- Required before submission Ч enforced in UI personal_hook_options JSONB, -- Three AI-generated options shown to user status TEXT DEFAULT &apos;draft&apos;, submitted_via TEXT, -- &apos;email&apos;|&apos;portal&apos;|&apos;linkedin&apos;|&apos;spontaneous&apos; submitted_at TIMESTAMPTZ, follow_up_1_sent TIMESTAMPTZ, follow_up_2_sent TIMESTAMPTZ, response_received BOOLEAN DEFAULT false, response_type TEXT, -- &apos;positive&apos;|&apos;negative&apos;|&apos;ghosted&apos;|&apos;interview&apos; notes TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW() ); ALTER TABLE applications ENABLE ROW LEVEL SECURITY; CREATE POLICY apps_own ON applications FOR ALL TO authenticated USING (auth.uid()=user_id) WITH CHECK (auth.uid()=user_id); interviews CREATE TABLE interviews ( id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE, application_id UUID NOT NULL REFERENCES applications(id), interview_date TIMESTAMPTZ NOT NULL, interview_type TEXT CHECK (interview_type IN (&apos;phone_screen&apos;,&apos;video&apos;,&apos;onsite&apos;,&apos;technical&apos;,&apos;panel&apos;)), interviewer_names TEXT[], interviewer_linkedin_urls TEXT[], prep_kit_generated BOOLEAN DEFAULT false, prep_kit_json JSONB, -- Full AI-generated prep kit voice_practice_sessions INTEGER DEFAULT 0, outcome TEXT CHECK (outcome IN (&apos;passed&apos;,&apos;failed&apos;,&apos;pending&apos;,&apos;cancelled&apos;)), feedback_received TEXT, calendar_event_id TEXT, -- Google Calendar event ID created_at TIMESTAMPTZ DEFAULT NOW() ); ALTER TABLE interviews ENABLE ROW LEVEL SECURITY; CREATE POLICY interviews_own ON interviews FOR ALL TO authenticated USING (auth.uid()=user_id); offers CREATE TABLE offers ( id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE, application_id UUID NOT NULL REFERENCES applications(id), base_salary NUMERIC, currency CHAR(3), city TEXT, country TEXT, start_date DATE, response_deadline DATE, decision TEXT CHECK (decision IN (&apos;accepted&apos;,&apos;declined&apos;,&apos;negotiating&apos;,&apos;pending&apos;)), negotiation_plan_json JSONB, -- AI-generated negotiation plan counter_offer_email TEXT, final_agreed_amount NUMERIC, thirty_percent_ruling_eligible BOOLEAN, -- Netherlands only net_monthly_estimated NUMERIC, purchasing_power_index NUMERIC, created_at TIMESTAMPTZ DEFAULT NOW() ); ALTER TABLE offers ENABLE ROW LEVEL SECURITY; CREATE POLICY offers_own ON offers FOR ALL TO authenticated USING (auth.uid()=user_id); contacts CREATE TABLE contacts ( id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE, company TEXT NOT NULL, company_domain TEXT, job_id UUID REFERENCES jobs(id) ON DELETE SET NULL, name TEXT, title TEXT, email TEXT, email_confidence INTEGER, email_source TEXT, -- &apos;hunter&apos;|&apos;apollo&apos;|&apos;pattern_guess&apos;|&apos;warm_network&apos;|&apos;manual&apos; requires_manual_verification BOOLEAN DEFAULT false, linkedin_url TEXT, xing_url TEXT, -- For Germany XING outreach country TEXT, outreach_status TEXT DEFAULT &apos;queued&apos;, -- &apos;queued&apos;|&apos;email_1_sent&apos;|&apos;email_2_sent&apos;|&apos;email_3_sent&apos;|&apos;replied&apos;|&apos;closed&apos;|&apos;unsubscribed&apos; last_contact_date TIMESTAMPTZ, reply_content TEXT, reply_sentiment TEXT, reply_language TEXT, -- Detected language of reply reply_days_from_email1 INTEGER, -- For response speed analytics do_not_contact BOOLEAN DEFAULT false, do_not_contact_reason TEXT, previous_outreach_job_ids UUID[], activity_score INTEGER, -- LinkedIn recent activity vip BOOLEAN DEFAULT false, warm_connection BOOLEAN DEFAULT false, notes TEXT, created_at TIMESTAMPTZ DEFAULT NOW() ); ALTER TABLE contacts ENABLE ROW LEVEL SECURITY; CREATE POLICY contacts_own ON contacts FOR ALL TO authenticated USING (auth.uid()=user_id); email_sequences CREATE TABLE email_sequences ( id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE, contact_id UUID REFERENCES contacts(id), email_number INTEGER NOT NULL, -- 1, 2, or 3 subject TEXT, subject_variant TEXT, -- &apos;A&apos;|&apos;B&apos; for A/B testing body TEXT, email_1_body TEXT, -- Stored so Email 2 can use a genuinely different angle scheduled_send TIMESTAMPTZ, actual_send TIMESTAMPTZ, opened BOOLEAN DEFAULT false, opened_at TIMESTAMPTZ, clicked BOOLEAN DEFAULT false, replied BOOLEAN DEFAULT false, replied_at TIMESTAMPTZ, bounced BOOLEAN DEFAULT false, bounce_type TEXT CHECK (bounce_type IN (&apos;hard&apos;,&apos;soft&apos;,&apos;block&apos;)), spam_reported BOOLEAN DEFAULT false, unsubscribed BOOLEAN DEFAULT false, unsubscribed_at TIMESTAMPTZ, resend_email_id TEXT, created_at TIMESTAMPTZ DEFAULT NOW() ); ALTER TABLE email_sequences ENABLE ROW LEVEL SECURITY; CREATE POLICY sequences_own ON email_sequences FOR ALL TO authenticated USING (auth.uid()=user_id); company_research -- Shared across users Ч no user_id intentionally -- Saves duplicate API calls when multiple users research same company CREATE TABLE company_research ( id UUID PRIMARY KEY DEFAULT gen_random_uuid(), domain TEXT UNIQUE NOT NULL, name TEXT, linkedin_about TEXT, recent_posts JSONB, recent_news JSONB, tech_stack JSONB, headcount_range TEXT, -- &apos;1-10&apos;|&apos;11-50&apos;|&apos;51-200&apos;|&apos;201-500&apos;|&apos;500+&apos; funding_stage TEXT, -- &apos;bootstrapped&apos;|&apos;seed&apos;|&apos;series-a&apos;|&apos;series-b&apos;|&apos;public&apos; hiring_velocity TEXT, -- &apos;active&apos;|&apos;selective&apos;|&apos;paused&apos; posting_history JSONB, -- {&apos;2025-Q1&apos;:3,&apos;2025-Q2&apos;:0} for hiring window prediction research_source TEXT, -- &apos;linkedin&apos;|&apos;website&apos;|&apos;crunchbase&apos;|&apos;fallback&apos; research_confidence TEXT, -- &apos;high&apos;|&apos;medium&apos;|&apos;low&apos; ai_hook TEXT, hook_confidence TEXT, -- &apos;high&apos;|&apos;medium&apos;|&apos;low&apos;|&apos;fallback&apos; successful_hire_pattern JSONB, manual_notes TEXT, last_refreshed TIMESTAMPTZ DEFAULT NOW(), created_at TIMESTAMPTZ DEFAULT NOW() ); -- Shared read, authenticated write ALTER TABLE company_research ENABLE ROW LEVEL SECURITY; CREATE POLICY research_read ON company_research FOR SELECT TO authenticated USING (true); CREATE POLICY research_write ON company_research FOR INSERT TO authenticated WITH CHECK (true); CREATE POLICY research_update ON company_research FOR UPDATE TO authenticated USING (true); cv_templates CREATE TABLE cv_templates ( id SERIAL PRIMARY KEY, user_id UUID REFERENCES auth.users(id), track_number INTEGER CHECK (track_number BETWEEN 1 AND 6) NOT NULL, track_name TEXT NOT NULL, base_html TEXT NOT NULL, -- Full A4 HTML template base_experience_json JSONB, skills_emphasis TEXT[], certifications TEXT[], last_updated TIMESTAMPTZ DEFAULT NOW(), UNIQUE(user_id, track_number) ); ALTER TABLE cv_templates ENABLE ROW LEVEL SECURITY; CREATE POLICY templates_own ON cv_templates FOR ALL TO authenticated USING (auth.uid()=user_id); visa_tracker CREATE TABLE visa_tracker ( id SERIAL PRIMARY KEY, user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE, permit_type TEXT NOT NULL, -- &apos;chancenkarte&apos;|&apos;blue_card&apos;|&apos;single_permit&apos;|&apos;work_permit&apos;|&apos;talent_passport&apos; country TEXT NOT NULL, status TEXT CHECK (status IN (&apos;planning&apos;,&apos;documents_gathering&apos;,&apos;submitted&apos;,&apos;processing&apos;,&apos;approved&apos;,&apos;denied&apos;)), submission_date DATE, expected_decision_date DATE, actual_decision_date DATE, documents JSONB, -- [{ name: &apos;...&apos;, required: true, obtained: false, due_date: &apos;...&apos; }] notes TEXT, next_action TEXT, next_action_date DATE, updated_at TIMESTAMPTZ DEFAULT NOW() ); ALTER TABLE visa_tracker ENABLE ROW LEVEL SECURITY; CREATE POLICY visa_own ON visa_tracker FOR ALL TO authenticated USING (auth.uid()=user_id); certifications_tracker CREATE TABLE certifications_tracker ( id SERIAL PRIMARY KEY, user_id UUID NOT NULL REFERENCES auth.users(id), cert_name TEXT NOT NULL, current_status TEXT CHECK (current_status IN (&apos;studying&apos;,&apos;registered&apos;,&apos;taken&apos;,&apos;passed&apos;,&apos;failed&apos;)), target_date DATE, test_score NUMERIC, pass_threshold NUMERIC, weekly_study_hours_target INTEGER DEFAULT 5, weekly_log JSONB, unlocks_feature TEXT, -- &apos;german_language_jobs&apos; triggers rescoring of all German-language jobs created_at TIMESTAMPTZ DEFAULT NOW() ); ALTER TABLE certifications_tracker ENABLE ROW LEVEL SECURITY; CREATE POLICY certs_own ON certifications_tracker FOR ALL TO authenticated USING (auth.uid()=user_id); analytics_daily CREATE TABLE analytics_daily ( id BIGSERIAL PRIMARY KEY, user_id UUID NOT NULL REFERENCES auth.users(id), date DATE NOT NULL, CONSTRAINT analytics_user_date UNIQUE (user_id, date), jobs_found INTEGER DEFAULT 0, applications_submitted INTEGER DEFAULT 0, emails_sent INTEGER DEFAULT 0, email_opens INTEGER DEFAULT 0, email_replies INTEGER DEFAULT 0, linkedin_connections_sent INTEGER DEFAULT 0, interviews_booked INTEGER DEFAULT 0, time_spent_minutes INTEGER DEFAULT 0 ); ALTER TABLE analytics_daily ENABLE ROW LEVEL SECURITY; CREATE POLICY analytics_own ON analytics_daily FOR ALL TO authenticated USING (auth.uid()=user_id); content_queue CREATE TABLE content_queue ( id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE, platform TEXT NOT NULL, -- &apos;linkedin&apos;|&apos;twitter&apos; content_type TEXT, -- &apos;post&apos;|&apos;thread&apos;|&apos;comment&apos;|&apos;connection_note&apos; content TEXT NOT NULL, target_url TEXT, -- for comments: the post URL target_person TEXT, status TEXT DEFAULT &apos;pending&apos;, -- &apos;pending&apos;|&apos;approved&apos;|&apos;posted&apos;|&apos;skipped&apos; scheduled_for TIMESTAMPTZ, posted_at TIMESTAMPTZ, linkedin_post_id TEXT, likes_count INTEGER DEFAULT 0, comments_count INTEGER DEFAULT 0, shares_count INTEGER DEFAULT 0, impressions INTEGER DEFAULT 0, closing_style TEXT, -- &apos;question&apos;|&apos;statement&apos;|&apos;provocation&apos;|&apos;observation&apos; created_at TIMESTAMPTZ DEFAULT NOW() ); ALTER TABLE content_queue ENABLE ROW LEVEL SECURITY; CREATE POLICY content_own ON content_queue FOR ALL TO authenticated USING (auth.uid()=user_id); daily_tasks CREATE TABLE daily_tasks ( id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE, date DATE NOT NULL DEFAULT CURRENT_DATE, task_type TEXT NOT NULL, reference_id UUID, reference_table TEXT, priority_level TEXT CHECK (priority_level IN (&apos;critical&apos;,&apos;high&apos;,&apos;medium&apos;,&apos;low&apos;,&apos;optional&apos;)) DEFAULT &apos;medium&apos;, title TEXT NOT NULL, description TEXT, completed BOOLEAN DEFAULT false, completed_at TIMESTAMPTZ, carry_forward_count INTEGER DEFAULT 0, skip_reason TEXT, created_at TIMESTAMPTZ DEFAULT NOW() ); ALTER TABLE daily_tasks ENABLE ROW LEVEL SECURITY; CREATE POLICY tasks_own ON daily_tasks FOR ALL TO authenticated USING (auth.uid()=user_id); system_health CREATE TABLE system_health ( id BIGSERIAL PRIMARY KEY, cron_name TEXT NOT NULL, status TEXT CHECK (status IN (&apos;success&apos;,&apos;failed&apos;,&apos;partial&apos;)), items_processed INTEGER DEFAULT 0, details TEXT, ran_at TIMESTAMPTZ DEFAULT NOW() ); -- No RLS on system_health Ч system-wide, admin only prompt_performance CREATE TABLE prompt_performance ( id BIGSERIAL PRIMARY KEY, user_id UUID NOT NULL REFERENCES auth.users(id), period_start DATE, period_end DATE, best_subject_pattern TEXT, best_subject_open_rate NUMERIC, top_country TEXT, top_industry TEXT, prompt_changes_made TEXT, created_at TIMESTAMPTZ DEFAULT NOW() ); community_intel Ч productisation phase only -- No user_id Ч anonymous by design.
+GDPR-compliant.
+CREATE TABLE community_intel ( id BIGSERIAL PRIMARY KEY, company_domain TEXT NOT NULL, intel_type TEXT CHECK (intel_type IN (&apos;process_speed&apos;,&apos;sponsorship_reality&apos;,&apos;ghosting_rate&apos;,&apos;interview_style&apos;)), rating INTEGER CHECK (rating BETWEEN 1 AND 5), notes TEXT, -- Max 280 chars submitter_country TEXT, submitted_at TIMESTAMPTZ DEFAULT NOW() ); All Indexes -- Jobs CREATE INDEX idx_jobs_user_status ON jobs(user_id, status); CREATE INDEX idx_jobs_country_score ON jobs(country, ai_score DESC); CREATE INDEX idx_jobs_source_date ON jobs(source, date_found DESC); -- Applications CREATE INDEX idx_apps_user_status ON applications(user_id, status); CREATE INDEX idx_apps_submitted ON applications(submitted_at DESC) WHERE submitted_at IS NOT NULL; -- Contacts CREATE INDEX idx_contacts_user_status ON contacts(user_id, outreach_status); CREATE INDEX idx_contacts_domain ON contacts(company_domain, outreach_status); CREATE INDEX idx_contacts_vip ON contacts(user_id, vip) WHERE vip = true; -- Email sequences CREATE INDEX idx_sequences_contact ON email_sequences(contact_id, email_number); CREATE INDEX idx_sequences_scheduled ON email_sequences(scheduled_send); -- Daily tasks CREATE INDEX idx_tasks_date ON daily_tasks(user_id, date, completed); CREATE INDEX idx_tasks_priority ON daily_tasks(user_id, date, priority_level); -- Analytics CREATE INDEX idx_analytics_user_date ON analytics_daily(user_id, date DESC); -- Company research CREATE INDEX idx_research_domain ON company_research(domain, last_refreshed DESC); GDPR Ч Automated Data Purge -- Runs every Sunday at 02:00 UTC SELECT cron.schedule(&apos;gdpr-90day-purge&apos;, &apos;0 2 * * 0&apos;, $$ UPDATE contacts SET email = &apos;[PURGED-GDPR]&apos;, name = &apos;[PURGED]&apos;, reply_content = NULL WHERE last_contact_date &lt; NOW() - INTERVAL &apos;90 days&apos; AND outreach_status IN (&apos;no_reply&apos;, &apos;queued&apos;) AND do_not_contact = false; $$); Section 5 Ч Module 1: Job Discovery Engine Dependencies: Supabase schema live, Apify account configured, Hermes 3 running on Hetzner, n8n running on Hetzner Trigger: n8n cron Ч every day 07:00 local time (05:00 UTC) Failure mode: If Apify fails: retry 3x with exponential backoff, then Telegram alert and skip that board for the day.
+Pipeline continues with other boards.
+If Hermes fails: route scoring to Groq fallback.
+If all LLMs fail: insert jobs with score=null, flag for manual review.
+Output: New jobs inserted to jobs table, scored, routed to cv_track, Telegram morning summary Scraping Targets Ч Corrected by Country Country Boards Priority Notes Poland NoFluffJobs, JustJoin.it, pracuj.pl, LinkedIn NoFluffJobs first 40% of quality roles not on other boards Romania bestjobs.eu, hipo.ro, ejobs.ro, LinkedIn bestjobs first More multinationals than ejobs.ro Malta keepmeposted.com.mt, igamingnext.com, gamingmalta.com, LinkedIn iGaming boards first iGaming is 30-35% of Malta&apos;s professional market Germany stepstone.de, xing.de, XING Jobs, linkedin.com stepstone + XING both XING critical for Mittelstand companies Netherlands linkedin.com, werkzoeken.nl, indeed.nl LinkedIn primary English-first market, LinkedIn dominant Core Flow // n8n workflow: Job Discovery Engine // Every node has: Retry on Fail=true, Max Tries=3, Wait=2000ms exponential // 1.
+Scrape all boards in parallel (n8n Parallel Branch node) const [poland, romania, malta, germany, netherlands] = await Promise.all([ scrapeWithRetry(&apos;nofluffjobs&apos;, { queries: QUERIES.Poland }), scrapeWithRetry(&apos;bestjobs&apos;, { queries: QUERIES.Romania }), scrapeWithRetry(&apos;igamingnext&apos;, { queries: QUERIES.Malta }), scrapeWithRetry(&apos;stepstone&apos;, { queries: QUERIES.Germany }), scrapeWithRetry(&apos;linkedin&apos;, { queries: QUERIES.Netherlands }), ]); // 2.
+Deduplicate against existing jobs table const allJobs = [...poland, ...romania, ...malta, ...germany, ...netherlands]; const existingUrls = await supabase.from(&apos;jobs&apos;).select(&apos;url&apos;); const newJobs = allJobs.filter(j =&gt; !existingUrls.has(j.url)); // 3.
+Filter stale listings (posted &gt; 21 days ago) const freshJobs = newJobs.filter(j =&gt; { if (!j.posted_date) return true; // Unknown age Ч include const ageDays = (Date.now() - new Date(j.posted_date)) / 86400000; return ageDays &lt;= 21; }); // 4.
+Language detection via Hermes (batch, local, free) const withLanguage = await Promise.all(freshJobs.map(async job =&gt; ({ ...job, detected_language: await detectLanguage(job.raw_description.slice(0, 300)) }))); // 5.
+Score via Hermes (batch local inference) const scored = await Promise.all(withLanguage.map(async job =&gt; { const score = await scoreJob(job); // Hermes ? Groq fallback const agePenalty = job.posting_age_days &gt; 21 ?
+2 : job.posting_age_days &gt; 14 ?
+1 : 0; return { ...job, ...score, ai_score: Math.max(1, score.ai_score - agePenalty) }; })); // 6.
+Insert to Supabase await supabase.from(&apos;jobs&apos;).insert(scored); // 7.
+Queue top jobs (score &gt;= 7) for application generation const toQueue = scored.filter(j =&gt; j.ai_score &gt;= 7); await supabase.from(&apos;jobs&apos;) .update({ status: &apos;queued&apos; }) .in(&apos;id&apos;, toQueue.map(j =&gt; j.id)); // 8.
+Telegram summary await telegram.send( `?? ${scored.length} new jobs found\n` + `? ${toQueue.length} queued for generation\n` + `? ${scored.filter(j=&gt;j.ai_score&gt;=5&amp;&amp;j.ai_score&lt;7).length} need review` ); Optimised Boolean Queries by Country export const QUERIES = { Poland: [ &apos;&quot;SDR&quot; OR &quot;Sales Development Representative&quot; AND &quot;English&quot; Warsaw OR Wroclaw&apos;, &apos;&quot;Customer Success&quot; AND &quot;English&quot; Poland AND NOT &quot;Senior&quot; AND NOT &quot;Director&quot;&apos;, &apos;&quot;Arabic&quot; AND &quot;Sales&quot; Poland&apos;, &apos;&quot;Multilingual&quot; AND &quot;B2B&quot; Poland&apos; ], Romania: [ &apos;&quot;Sales&quot; AND &quot;English&quot; Bucharest AND NOT &quot;Senior&quot;&apos;, &apos;&quot;Customer Support&quot; AND (&quot;Arabic&quot; OR &quot;French&quot;) Romania&apos;, &apos;&quot;B2B&quot; AND &quot;English&quot; Bucharest&apos; ], Malta: [ &apos;&quot;Customer Support&quot; AND &quot;English&quot; Malta NOT &quot;Remote&quot;&apos;, &apos;&quot;KYC&quot; AND &quot;Malta&quot; AND &quot;English&quot; NOT &quot;Senior&quot;&apos;, &apos;&quot;Sales&quot; Malta AND (&quot;iGaming&quot; OR &quot;Fintech&quot; OR &quot;Crypto&quot;)&apos;, &apos;&quot;Arabic&quot; speaker Malta&apos; ], Germany: [ &apos;&quot;SDR&quot; OR &quot;Vertrieb&quot; AND &quot;Englisch&quot; Deutschland NOT &quot;Senior&quot;&apos;, &apos;&quot;Kundenbetreuung&quot; AND &quot;Englisch&quot; Germany&apos;, &apos;&quot;Arabic&quot; AND &quot;Sales&quot; Germany&apos; ], Netherlands: [ &apos;&quot;SDR&quot; OR &quot;Inside Sales&quot; Amsterdam AND &quot;English&quot;&apos;, &apos;&quot;Customer Success&quot; Amsterdam AND NOT &quot;Senior&quot;&apos;, &apos;&quot;Multilingual&quot; AND &quot;B2B&quot; Netherlands&apos; ] }; Section 6 Ч Module 2: Company Research Engine Dependencies: Module 1 complete, Apify configured, Gemini API key, Google News RSS accessible Trigger: Called per company domain before any email or cover letter is generated Caching: 7-day TTL.
+If cache hit: return immediately.
+If miss: run research agent.
+Failure mode: LinkedIn blocked (happens frequently): skip to Tier 2.
+Website unreachable: skip to Tier 3.
+All tiers fail: return generic hook with confidence=&apos;fallback&apos;.
+Never block application generation due to research failure.
+4-Tier Research Chain async function researchCompany(domain) { // Check 7-day cache first const cached = await supabase.from(&apos;company_research&apos;) .select(&apos;*&apos;).eq(&apos;domain&apos;, domain) .gte(&apos;last_refreshed&apos;, sevenDaysAgo()).single(); if (cached.data) return cached.data; let data = { about:null, posts:[], news:[], source:null, confidence:&apos;low&apos; }; // Tier 1: LinkedIn (best, frequently blocked) try { const li = await apify.run(&apos;linkedin-company-scraper&apos;, { domain }); if (li?.about) data = { about: li.about, posts: li.recent_posts?.slice(0,3) || [], source: &apos;linkedin&apos;, confidence: &apos;high&apos; }; } catch (e) { /* LinkedIn blocked Ч move to Tier 2 */ } // Tier 2: Company website if (!data.about) { try { const html = await fetch(`https://${domain}`).then(r =&gt; r.text()); const extracted = await callLLM(&apos;groq&apos;, `Extract company mission/about from this HTML.
+Max 200 words.
+Return JSON: { about, key_product }\n${html.slice(0,3000)}`, &apos;Extract company information.
+Return JSON only.&apos; ); data.about = JSON.parse(extracted).about; data.source = &apos;website&apos;; data.confidence = &apos;medium&apos;; } catch (e) { /* Website extraction failed */ } } // Tier 3: Google News RSS (always free) try { const feed = await fetch(`https://news.google.com/rss/search?q=${domain}&amp;hl=en`); data.news = parseRSS(await feed.text()).slice(0,3); } catch (e) { /* News fetch failed */ } // Tier 4: Crunchbase basic if (!data.about) { try { const slug = domain.split(&apos;.&apos;)[0]; const cb = await fetch(`https://api.crunchbase.com/api/v4/entities/organizations/${slug}?user_key=${CB_KEY}`).then(r=&gt;r.json()); data.about = cb?.properties?.short_description; data.source = &apos;crunchbase&apos;; } catch (e) { /* Crunchbase failed */ } } // Data quality gate Ч never hallucinate hooks on sparse data const hasData = (data.about?.length &gt; 100) || data.posts?.length &gt; 0 || data.news?.length &gt; 0; const hook = hasData ?
+await generateHook(data) // Groq Ч short creative output : { text: `Working in this sector in the target market is exactly the direction I&apos;m building toward.`, confidence: &apos;fallback&apos; }; // Cache and return await supabase.from(&apos;company_research&apos;).upsert({ domain, ...data, ai_hook: hook.text, hook_confidence: hook.confidence, last_refreshed: new Date().toISOString() }); return hook; } Section 7 Ч Module 3: Application Generator Dependencies: Module 2 complete, cv_templates seeded, Puppeteer service running on Hetzner, Cloudflare R2 configured Trigger: Runs at 08:00 UTC daily on all jobs with status=&apos;queued&apos; Failure mode: If Gemini fails: retry 3x, then Groq fallback.
+If PDF rendering fails: store cover letter text only, flag PDF as pending.
+If R2 upload fails: retry 3x, alert via Telegram.
+Never leave application in &apos;generating&apos; status for &gt;10 minutes Ч auto-reset to &apos;queued&apos;.
+PDF Generation Ч Puppeteer on Hetzner Puppeteer runs as a microservice on the Hetzner server.
+Cloudflare Workers call it via HTTP.
+Chromium runs headlessly with full memory available.
+// Hetzner microservice Ч /pdf-service/server.js // Runs on port 3001, accessible only internally to n8n and Workers via Hetzner IP import express from &apos;express&apos;; import puppeteer from &apos;puppeteer&apos;; import { PDFDocument } from &apos;pdf-lib&apos;; // For metadata sanitization const app = express(); app.use(express.json({ limit: &apos;2mb&apos; })); app.post(&apos;/render&apos;, async (req, res) =&gt; { const { html, jobTitle } = req.body; const browser = await puppeteer.launch({ headless: &apos;new&apos;, args: [&apos;--no-sandbox&apos;, &apos;--disable-setuid-sandbox&apos;] }); try { const page = await browser.newPage(); await page.setContent(html, { waitUntil: &apos;networkidle0&apos; }); const rawPdf = await page.pdf({ format: &apos;A4&apos;, margin: { top:&apos;15mm&apos;, right:&apos;15mm&apos;, bottom:&apos;15mm&apos;, left:&apos;15mm&apos; }, printBackground: true }); // Strip AI generation fingerprints from metadata const sanitized = await sanitizeMetadata(rawPdf, jobTitle); res.type(&apos;application/pdf&apos;).send(Buffer.from(sanitized)); } finally { await browser.close(); } }); async function sanitizeMetadata(pdfBuffer, jobTitle) { const doc = await PDFDocument.load(pdfBuffer); doc.setTitle(&apos;Najd Salhi Ч CV&apos;); doc.setAuthor(&apos;Najd Salhi&apos;); doc.setProducer(&apos;Microsoft Word&apos;); // Neutral, common doc.setCreator(&apos;Microsoft Word&apos;); // Set plausible creation time Ч not 3am UTC const t = new Date(); t.setHours(9+Math.floor(Math.random()*3), Math.floor(Math.random()*59)); doc.setCreationDate(t); doc.setModificationDate(t); return await doc.save(); } app.listen(3001); Personal Hook Semi-Automation Ч 3 Options // Generate 3 hook candidates Ч user picks one in dashboard // Takes 15 seconds not 90 seconds.
+Enforced in UI Ч cannot submit without choosing.
+async function generateHookOptions(company, researchSummary, jobTitle) { return await callLLM(&apos;gemini&apos;, ` Generate 3 PERSONAL_HOOK candidates for a cover letter to ${company}.
+Company research: ${researchSummary} Job: ${jobTitle} Rules: - Each hook: 1 sentence, max 25 words - Each references something SPECIFIC about this company - All 3 use DIFFERENT angles: Hook 0: product or service experience angle Hook 1: market observation angle Hook 2: recent news or company event angle - Sound like a real person who naturally noticed something - Never: &apos;I noticed&apos;, &apos;I saw&apos;, &apos;I came across&apos; Return JSON only: { hooks: [&apos;h0&apos;,&apos;h1&apos;,&apos;h2&apos;], recommended: 0|1|2 }`, &apos;You generate personalization hooks for job applications.
+Return JSON only.&apos; ); } Section 8 Ч Module 4: Cold Outreach Engine Dependencies: Module 3 complete, Resend domain warmed (21+ days), Hunter.io configured, Email 1 body always stored in email_sequences table Trigger: Runs at 09:00 UTC daily on contacts with outreach_status=&apos;queued&apos; Failure mode: If Hunter returns no email: try Apollo ? pattern guess (manual verify required) ? LinkedIn DM task.
+If email bounces (hard): mark do_not_contact=true.
+If spam rate exceeds 0.15%: pause all sending, Telegram alert.
+Work Permit Language by Country // Always use the correct permit reference for the target country // Never mention Chancenkarte outside Germany-targeted applications export const PERMIT_CONTEXT = { Germany: &apos;Chancenkarte application in progress Ч available from [MONTH].&apos;, Poland: &apos;EU Blue Card eligible Ч permit timeline 4-6 weeks post-offer.&apos;, Romania: &apos;EU Blue Card eligible Ч Romanian ARC permit, typically 30 days post-offer.&apos;, Malta: &apos;Single Permit (employer-sponsored) Ч 4-6 weeks processing.&apos;, Netherlands: &apos;Highly Skilled Migrant visa Ч IND processing 2-4 weeks.
+Also eligible for 30% tax ruling.&apos;, }; Email Tone by Country export const EMAIL_STYLE = { Netherlands: { salutation:&apos;Hi {first_name},&apos;, max_sentences:4, formality:&apos;low&apos; }, Germany: { salutation:&apos;Sehr geehrte/r {title} {lastname},&apos;, max_sentences:5, formality:&apos;high&apos; }, Poland: { salutation:&apos;Hi {first_name},&apos;, max_sentences:5, formality:&apos;medium&apos; }, Romania: { salutation:&apos;Dear {first_name},&apos;, max_sentences:5, formality:&apos;medium&apos; }, Malta: { salutation:&apos;Hi {first_name},&apos;, max_sentences:4, formality:&apos;low&apos; }, }; Human Send Pattern Ч Day-of-Week Variation // Windows vary by day Ч prevents cumulative send-pattern fingerprinting export const SEND_WINDOWS = { 1: [{ start:&apos;08:43&apos;, end:&apos;11:17&apos; }, { start:&apos;14:07&apos;, end:&apos;16:52&apos; }], 2: [{ start:&apos;07:58&apos;, end:&apos;10:45&apos; }, { start:&apos;15:15&apos;, end:&apos;17:20&apos; }], 3: [{ start:&apos;09:10&apos;, end:&apos;11:45&apos; }, { start:&apos;13:30&apos;, end:&apos;15:55&apos; }], 4: [{ start:&apos;08:20&apos;, end:&apos;10:58&apos; }, { start:&apos;14:45&apos;, end:&apos;16:30&apos; }], // 5 = Friday Ч no sends (emails buried over weekend) }; export const SEND_CONFIG = { delay_between_emails_ms: { min: 7*60000, max: 23*60000 }, // 7-23 minutes daily_limit: { min: 17, max: 28 }, // Never fixed skip_day_probability: 0.15, // 15% chance of no sends Ч mimics human }; GDPR Ч Required in Every Email // Footer appended to every outbound email Ч no exceptions export const GDPR_FOOTER = (country) =&gt; ` Ч You&apos;re receiving this as I&apos;m seeking professional opportunities in ${country}.
+To stop: reply with &apos;unsubscribe&apos; and I&apos;ll remove you within 24 hours.`, // Unsubscribe handler Ч runs in reply webhook if (/unsubscribe|remove me|stop|opt.?out/i.test(replyText)) { await supabase.from(&apos;contacts&apos;).update({ do_not_contact: true, outreach_status: &apos;unsubscribed&apos; }).eq(&apos;email&apos;, contactEmail); await stopAllSequences(contactEmail); await sendReply(contactEmail, &apos;Done Ч removed immediately.&apos;); } Section 9 Ч Module 5: Reply Handler Dependencies: Module 4 running, Resend webhook configured, Gemini API key Trigger: Resend reply webhook ? Cloudflare Worker ? n8n ? Hetzner processing Failure mode: If language detection fails: default to English response.
+If reply classification unclear: send to Telegram as &apos;unclear Ч manual handling required&apos;.
+Never auto-send a reply without human approval.
+async function handleReply(contactEmail, replyText, companyDomain) { // 1.
+GDPR check Ч unsubscribe request if (/unsubscribe|remove me|stop/i.test(replyText)) { await handleUnsubscribe(contactEmail); return; } // 2.
+Multi-contact check Ч suppress auto-draft if multiple people at same company replied const siblings = await getActiveContactsAtDomain(companyDomain, contactEmail); if (siblings.length &gt; 0) { await telegram.send(`?? MULTI-CONTACT at ${companyDomain}\nHandle MANUALLY Ч draft suppressed`); return; } // 3.
+Detect reply language (Groq Ч free, fast) const lang = await callLLM(&apos;groq&apos;, `Detect language.
+Return JSON: { language: &apos;en|de|pl|ro|nl&apos; }\nText: &quot;${replyText.slice(0,300)}&quot;`, &apos;Detect language.
+Return JSON only.&apos; ); // 4.
+Classify intent (Groq) const classification = await callLLM(&apos;groq&apos;, `Classify: { sentiment: &apos;positive|negative|neutral|ooo&apos;, intent: &apos;wants_cv|wants_call|not_hiring|ooo|other&apos; }\n&quot;${replyText}&quot;`, &apos;Classify email reply.
+Return JSON only.&apos; ); // 5.
+OOO Ч extract return date and schedule follow-up if (classification.intent === &apos;ooo&apos;) { const returnDate = await extractOOOReturnDate(replyText); const followUp = returnDate ?
+addBusinessDays(returnDate, 1) : addDays(new Date(), 10); await createTask(&apos;ooo_followup&apos;, `${contactEmail} back from OOO`, followUp, &apos;medium&apos;); return; } // 6.
+Generate reply in correct language (Gemini) const draft = await callLLM(&apos;gemini&apos;, REPLY_HANDLER_PROMPT(replyText, classification.intent, lang.language), VOICE_SYSTEM_PROMPT ); // 7.
+Send to Telegram for approval Ч never auto-send await telegram.sendWithButtons({ text: `?? REPLY (${lang.language.toUpperCase()}) from ${contactEmail}\n\n${replyText}\n\nDraft:\n${draft}`, buttons: [[&apos;? Send&apos;,&apos;approve&apos;],[&apos;?? Edit&apos;,&apos;edit&apos;],[&apos;? Skip&apos;,&apos;skip&apos;]] }); } Section 10 Ч Module 6: LinkedIn &amp; Content Engine Dependencies: Buffer account configured, Telegram bot running, VIP accounts list populated Trigger: Weekly content generation: Sunday 20:00.
+Daily engagement queue: 08:30 weekdays.
+Failure mode: If Buffer API fails: store posts in content_queue with status=&apos;pending_schedule&apos;, alert via Telegram.
+If LinkedIn post scraper blocked: skip engagement queue for that day, log to system_health.
+LinkedIn ban risk: HIGH.
+Max 40 PhantomBuster profile visits/day.
+Max 8-12 connection requests/day.
+Never automate message sending.
+Never run LinkedIn scraping and PhantomBuster from same IP.
+Sensitivity Filter Ч Runs Before Every Comment // Check post for sensitive content before generating any comment async function isSensitivePost(postText) { const result = await callLLM(&apos;local&apos;, // Hermes Ч local, free, fast `Is this LinkedIn post about layoffs, restructuring, personal loss, or controversy?
+Return JSON: { sensitive: bool, reason: string } Post: &quot;${postText.slice(0,500)}&quot;`, &apos;Classify post sensitivity.
+Return JSON only.&apos; ); return JSON.parse(result); } // If sensitive: create manual task, never auto-generate if ((await isSensitivePost(post.text)).sensitive) { await createTask(&apos;manual_comment_decision&apos;, `Sensitive post from ${post.author} Ч decide manually`, `Post: ${post.url}`, null, &apos;high&apos; ); return; // Skip auto-generation } Weekly Content Generation Ч Sunday 20:00 // Every Sunday you send 5 bullet points of your week to a Telegram bot command // &apos;/weekly: Aldren got first waitlist signup, Goethe mock 78%, interesting Wifak situation...&apos; // The bot stores these and the Sunday cron picks them up async function generateWeeklyContent(weeklyContext) { // Fetch last 4 weeks post performance const { data: topPosts } = await supabase.from(&apos;content_queue&apos;) .select(&apos;content,comments_count,likes_count,closing_style&apos;) .eq(&apos;status&apos;,&apos;posted&apos;).order(&apos;comments_count&apos;,{ascending:false}).limit(3); const performanceContext = topPosts?.length &gt; 0 ?
+`Top performing posts: ${topPosts.map(p=&gt;p.content.slice(0,100)).join(&apos; | &apos;)}` : &apos;No performance data yet.&apos;; const posts = await callLLM(&apos;gemini&apos;, WEEKLY_CONTENT_PROMPT(weeklyContext, performanceContext), VOICE_SYSTEM_PROMPT ); // Schedule via Buffer API for (const [i, post] of JSON.parse(posts).entries()) { const day = [1,3,5][i]; // Mon, Wed, Fri await buffer.createPost({ text: post.content, profile_ids: [LINKEDIN_PROFILE_ID], scheduled_at: nextWeekday(day, &apos;09:30&apos;) }); await supabase.from(&apos;content_queue&apos;).insert({ platform:&apos;linkedin&apos;, content:post.content, closing_style:post.closing_style, status:&apos;scheduled&apos; }); } } Section 11 Ч Module 7: Daily Task Manager Dependencies: All modules running, Telegram bot running, Google Calendar OAuth configured Trigger: 08:30 UTC daily Failure mode: If task generation fails: send raw count summary to Telegram.
+Never silently skip Ч always send some morning message.
+Backlog Management async function buildDailyTasks() { const today = new Date().toISOString().split(&apos;T&apos;)[0]; // Archive tasks older than 3 days (except time-critical) await supabase.from(&apos;daily_tasks&apos;) .update({ completed:true, skip_reason:&apos;Auto-archived: over 3 days old&apos; }) .lt(&apos;date&apos;, threeDaysAgo()) .eq(&apos;completed&apos;, false) .not(&apos;task_type&apos;,&apos;in&apos;,&apos;(&quot;interview_today&quot;,&quot;call_scheduled&quot;,&quot;offer_deadline&quot;)&apos;); // Carry forward max 5 critical/high tasks from yesterday only const { data: carry } = await supabase.from(&apos;daily_tasks&apos;) .select(&apos;*&apos;).eq(&apos;date&apos;, yesterday()).eq(&apos;completed&apos;, false) .in(&apos;priority_level&apos;,[&apos;critical&apos;,&apos;high&apos;]).limit(5); const tasks = []; // Applications ready to submit const { data: ready } = await supabase.from(&apos;applications&apos;) .select(&apos;*, jobs(title,company,url)&apos;).eq(&apos;status&apos;,&apos;ready&apos;).limit(15); ready?.forEach(app =&gt; tasks.push({ task_type:&apos;submit_application&apos;, priority_level:&apos;high&apos;, title:`Submit to ${app.jobs.company} Ч ${app.jobs.title}`, description:`Add personal hook then submit.
+CV ready.` })); // LinkedIn connections to send const { data: connectQ } = await supabase.from(&apos;contacts&apos;) .select(&apos;*&apos;).eq(&apos;outreach_status&apos;,&apos;queued&apos;).eq(&apos;vip&apos;,false) .order(&apos;activity_score&apos;,{ascending:false}).limit(10); connectQ?.forEach(c =&gt; tasks.push({ task_type:&apos;send_linkedin_connection&apos;, priority_level:&apos;medium&apos;, title:`Connect with ${c.name} at ${c.company}`, description:`Profile: ${c.linkedin_url}` })); // Insert tasks + carry-forwards await supabase.from(&apos;daily_tasks&apos;).insert([ ...tasks.map(t=&gt;({...t, date:today, user_id:USER_ID})), ...(carry||[]).map(t=&gt;({...t, id:undefined, date:today, title:`[CARRIED] ${t.title}`, carry_forward_count:(t.carry_forward_count||0)+1})) ]); // Telegram morning briefing await telegram.send( `?? JOBFLOW Ч ${today}\n\n` + `?? ${ready?.length||0} ready to submit\n` + `?? ${connectQ?.length||0} LinkedIn connections\n` + `?? ${pendingReplies} replies to handle\n` + `?? ${todayInterviews} interviews today\n\n` + `? jobflow.najdsalhi.com` ); } Section 12 Ч Prompt Library All prompts are model-agnostic.
+They work with Gemini, DeepSeek, or any OpenAI-compatible API.
+The callLLM() function handles model routing.
+System prompts are cached where possible.
+VOICE_SYSTEM_PROMPT Ч The Foundation export const VOICE_SYSTEM_PROMPT = ` You write as Najd Salhi, a 25-year-old Tunisian relocating to the EU.
+VOICE: Direct.
+Confident.
+No corporate speak.
+Short punchy sentences mixed with longer explanatory ones.
+References specific numbers and experiences.
+Never performative.
+No fake modesty or fake enthusiasm.
+BANNED FIRST-TIER: passionate, excited to share, humbled, thrilled, game-changer, synergy, leverage (as verb), I am writing to, I hope this finds you well, detail-oriented, results-driven, team player, dynamic, proactive, I would love to connect, looking forward to hearing from you.
+BANNED SECOND-TIER: I wanted to reach out, touch base, circle back, moving forward, to that end, needless to say, I&apos;d love to, I am confident that, value-add, deep dive, bandwidth, take offline, level-setting, win-win, going forward.
+STRUCTURAL RULES: Never start 2 consecutive sentences with &apos;I&apos;.
+Never open any email or cover letter with &apos;I&apos;.
+Every paragraph must contain at least one sentence under 8 words.
+Vary sentence length Ч not all sentences the same rhythm.
+NAJD&apos;S FACTS (use these, never invent others): Foodomarket: 3 months US market, 200-300+ outbound calls/week, 5 accounts closed, avg $500 recurring basket.
+Wifak Bank: teller, Jun 2025-present, 30+ daily transactions, IMAL system.
+Aldren: Founder, B2B wholesale food ordering, NYC/NJ delis and halal markets.
+IronAge: Fitness subscription app, men 40+, React Native.
+Languages: Arabic (native), French (fluent), English (C2), German (B1+).
+Degree: Business English, Universitй de Sfax, H+ Anabin recognition.
+Relocating EU via Chancenkarte Ч Poland, Romania, Malta, Germany, Netherlands.
+`; JOB_SCORING_PROMPT Ч Hermes (local) export const JOB_SCORING_PROMPT = (jd, lang) =&gt; ` Score this job for Najd Salhi.
+Language: ${lang.toUpperCase()}.
+${lang!==&apos;en&apos;?&apos;Evaluate in original language Ч do not require English.&apos;:&apos;&apos;} CANDIDATE: Foodomarket 200-300+ calls/week 5 closes $500 avg basket US market.
+Wifak Bank 1yr client-facing financial services.
+Aldren founder B2B food wholesale NYC/NJ.
+Arabic native French fluent English C2 German B1+.
+Business English degree H+ Anabin.
+Relocating EU.
+CV TRACKS: 1=Sales/SDR: cold calling pipeline quota outbound prospecting closing.
+2=CS/Onboarding: retention implementation NPS churn relationship.
+3=Fintech/KYC: banking AML financial regulatory compliance verification.
+4=Product/Ops: product process analytics OKRs operations.
+5=Marketing/Content: campaigns SEO brand content social.
+6=Teaching/Training: education curriculum coaching IELTS.
+Track 1 vs 2: choose 1 if outbound mentioned, 2 if retention is primary.
+JOB DESCRIPTION: ${jd} Return JSON only: { score:1-10, cv_track:1-6, reasoning:&apos;one sentence&apos;, top_keywords:[&apos;k1&apos;,&apos;k2&apos;,&apos;k3&apos;], language_required:&apos;english|german|polish|romanian|none&apos;, sponsor_likely:true|false } `; EMAIL_1_PROMPT Ч Gemini export const EMAIL_1_PROMPT = (contact, company, hook, country) =&gt; ` Cold email from Najd Salhi to ${contact.name}, ${contact.title} at ${company}.
+${EMAIL_STYLE[country].salutation.replace(&apos;{first_name}&apos;, contact.name.split(&apos; &apos;)[0])} MAX ${EMAIL_STYLE[country].max_sentences} sentences.
+Tone: ${EMAIL_STYLE[country].formality}.
+Sentence 1: ${hook} Ч woven in naturally.
+Never &apos;I noticed&apos;.
+Sentences 2-3: Najd&apos;s strongest proof for this specific company.
+Food/food tech ? Foodomarket numbers + Aldren angle.
+Fintech/banking ? Wifak + Arabic MENA clients.
+Multilingual role ? language stack front and center.
+Sentence 4: ${PERMIT_CONTEXT[country]} Sentence 5: One ask.
+15 minutes.
+Not &apos;I would love to connect&apos;.
+Sign: Najd | [LinkedIn] | [+49 number] ${GDPR_FOOTER(country)} `; EMAIL_2_PROMPT Ч Gemini (requires Email 1 body) export const EMAIL_2_PROMPT = (email1Body, contact, company) =&gt; ` Email 2 follow-up from Najd to ${contact.name} at ${company}.
+EMAIL 1 ALREADY SENT Ч do NOT repeat this angle: \&quot;\&quot;\&quot; ${email1Body} \&quot;\&quot;\&quot; Opening MUST use a completely different angle.
+Email 1 used Foodomarket ? Email 2 opens with Aldren founder angle.
+Email 1 used food sector ? Email 2 opens with language stack.
+Email 1 used company hook ? Email 2 opens with pure value.
+2 sentences max.
+Lighter, more casual.
+End with a genuine specific question.
+Not a pitch.
+Never: &apos;just following up&apos;, &apos;circling back&apos;, &apos;checking in&apos;.
+`; COVER_LETTER_PROMPT Ч Gemini with German path export const getCoverLetterPrompt = (job, hook, contact, country) =&gt; { if (country === &apos;Germany&apos; || job.language_required === &apos;german&apos;) { return ` Write a Bewerbungsanschreiben as Najd Salhi.
+Betreff: Bewerbung als ${job.title} Sehr geehrte/r ${contact?.name ?
+`Frau/Herr ${contact.name.split(&apos; &apos;).pop()}` : &apos;Damen und Herren&apos;}, Formal German.
+Sie throughout.
+3 paragraphs, 200 words max.
+P1: ${hook} Ч adapted to formal German style.
+P2: Strongest proof for this role.
+P3: &apos;Mein Chancenkarte-Antrag ist in Bearbeitung; ich stehe ab [MONTH] zur Verfьgung.&apos; Leave: [PERSONAL_HOOK] Mit freundlichen Grьяen, / Najd Salhi`; } return ` Cover letter from Najd Salhi for ${job.title} at ${job.company}.
+${EMAIL_STYLE[country]?.salutation?.includes(&apos;geehrte&apos;) ?
+&apos;&apos; : &apos;Open with company hook, not I am writing.&apos;} P1: ${hook} woven in.
+Do not open with &apos;I am writing to apply&apos;.
+P2: Strongest proof for this specific role.
+Sales ? Foodomarket numbers.
+CS ? banking relationships.
+Food ? Aldren.
+One sentence noticeably shorter than the others.
+P3: ${PERMIT_CONTEXT[country]} ${country===&apos;Netherlands&apos;?&apos;Also eligible for 30% tax ruling.&apos;:&apos;&apos;} Specific ask.
+Not &apos;I look forward to hearing from you&apos;.
+Leave on its own line: [PERSONAL_HOOK] Najd Salhi`; }; REPLY_HANDLER_PROMPT Ч Gemini export const REPLY_HANDLER_PROMPT = (replyText, intent, lang) =&gt; ` Write Najd&apos;s email reply.
+Max 4 sentences.
+LANGUAGE: ${lang.toUpperCase()}.
+${lang===&apos;de&apos;?&apos;Formal German.
+Sie.
+Close: Mit freundlichen Grьяen, Najd Salhi&apos;:&apos;&apos;} ${lang===&apos;pl&apos;?&apos;Professional Polish.
+Close: Z powazaniem, Najd Salhi&apos;:&apos;&apos;} Reply: &quot;${replyText}&quot; | Intent: ${intent} wants_cv ? Confirm.
+Name the file.
+Offer to answer questions.
+wants_call ? Propose 2 times from calendar availability (fetch via Google Calendar).
+not_hiring ? Thank warmly.
+&apos;I&apos;ll reach out again when things open up.&apos; wrong_person ? Ask for the right contact.
+1 sentence.
+Direct, warm but efficient.
+Sign: Najd.
+Return body only.`, LINKEDIN_COMMENT_PROMPT Ч Hermes (local) export const LINKEDIN_COMMENT_PROMPT = (postText, author, company) =&gt; ` LinkedIn comment from Najd Salhi on this post.
+Author: ${author} at ${company}.
+Post: ${postText} 1-3 sentences.
+Add specific angle, experience, or respectful disagreement.
+Never: Great, Love this, So true, Totally agree.
+Never end with: What do you think?
+Thoughts?
+Agree or disagree?
+If agreeing: one specific reason why.
+If disagreeing: one respectful counter-point.
+End with a question only if it genuinely adds to the conversation.
+Return comment text only.`, WEEKLY_CONTENT_PROMPT Ч Gemini export const WEEKLY_CONTENT_PROMPT = (weeklyContext, performanceContext) =&gt; ` 3 LinkedIn posts for this week as Najd Salhi.
+Week context: ${weeklyContext} Performance data: ${performanceContext} Lean into topics that drove comments.
+Do not repeat last week&apos;s topics.
+Post 1 (Monday): Industry insight or market observation.
+Post 2 (Wednesday): Personal build update from the week context.
+Post 3 (Friday): Contrarian take, lesson, or value-add.
+CLOSING STYLE Ч vary across all 3: Post 1: strong statement OR question Ч whichever the content earns.
+Post 2: end with what you learned.
+No question unless genuine.
+Post 3: end however the content naturally closes.
+Never: What do you think?
+Thoughts?
+Let me know in the comments.
+Max 150 words per post.
+Max 2 hashtags.
+No emoji unless meaningful.
+Return JSON: [{ content, closing_style }] Ч 3 items.`, Section 13 Ч Human-Feel Layer: Anti-Detection Engineering The goal is output that a human recipient cannot distinguish from a manually written message.
+This section documents every technique used across emails, CVs, LinkedIn activity, and content.
+Email Warmup Protocol ? Use a custom domain: najdsalhi.com via Cloudflare (~А10/year) ? Configure SPF, DKIM, DMARC via Cloudflare DNS Ч Resend guides you through this ? Warmup period: 21-28 days of low-volume sending via Resend warmup feature before bulk ? Target sender score: 90+ before launching sequences ? Monitor: check bounce rate and spam complaints weekly.
+Hard bounce &gt;5% or spam &gt;0.15% triggers immediate pause and Telegram alert ATS Portal Detection Ч Complete Map export const PORTAL_MAP = { &apos;greenhouse.io&apos;:&apos;greenhouse&apos;, &apos;workable.com&apos;:&apos;workable&apos;, &apos;lever.co&apos;:&apos;lever&apos;, &apos;recruitee.com&apos;:&apos;recruitee&apos;, &apos;personio.de&apos;:&apos;personio&apos;, &apos;personio.com&apos;:&apos;personio&apos;, &apos;smartrecruiters.com&apos;:&apos;smartrecruiters&apos;, // German/Dutch enterprise &apos;taleo.net&apos;:&apos;taleo&apos;, &apos;successfactors.com&apos;:&apos;sap_successfactors&apos;, // German enterprise &apos;teamtailor.com&apos;:&apos;teamtailor&apos;, // Scandinavian-origin &apos;softgarden.io&apos;:&apos;softgarden&apos;, // Germany-specific &apos;softgarden.de&apos;:&apos;softgarden&apos;, &apos;jobvite.com&apos;:&apos;jobvite&apos;, // Malta iGaming &apos;bamboohr.com&apos;:&apos;bamboohr&apos;, &apos;icims.com&apos;:&apos;icims&apos;, &apos;hibob.com&apos;:&apos;hibob&apos;, // Poland/Netherlands }; Humanisation Pass Ч Post-Generation // Run on all Gemini-generated cover letters and Email 1s export const HUMANIZE_PROMPT = (text) =&gt; ` Make 3-5 subtle edits to this text to make it feel more human: &quot;${text}&quot; Acceptable edits: Add one natural contraction (I have ? I&apos;ve).
+Vary one sentence dramatically shorter or longer than its neighbors.
+Replace one polished phrase with a more natural one.
+Add one em-dash or parenthetical showing real-time thinking.
+If 3+ sentences are similar length: break one up.
+Do not change facts, numbers, or names.
+Return edited text only.`, Section 14 Ч Country-Specific Engineering Poland Primary job boards: NoFluffJobs.com (highest signal), JustJoin.it, pracuj.pl (English filter), LinkedIn Work permit reference: EU Blue Card eligible Ч permit timeline 4-6 weeks post-offer.
+Never mention Chancenkarte.
+Email tone: Professional warm.
+Hi {first_name}.
+5 sentences max.
+Cover letter format: English standard format Salary context: Entry А1,400-2,400 PLN/month equivalent.
+COL index 65 vs Warsaw baseline.
+Good first EU role.
+XING: Not used Ч Polish market is LinkedIn + NoFluffJobs Spontaneous application term: Not standard Ч use direct email with subject: &apos;Sales / CSM Application Ч Najd Salhi&apos; Romania Primary job boards: bestjobs.eu (multinationals, English), hipo.ro (tech, English), ejobs.ro (wider net), LinkedIn Work permit reference: EU Blue Card eligible Ч Romanian ARC permit, typically 30 days post-offer Email tone: Professional warm.
+Dear {first_name}.
+5 sentences max.
+Salary context: Entry А700-1,400/month net.
+COL index 42 vs Warsaw.
+Arabic speakers have near-zero competition here.
+Top targets: Concentrix Bucharest, Teleperformance Romania, Amazon Bucharest, Stefanini, Wipro Malta Primary job boards: keepmeposted.com.mt, igamingnext.com, gamingmalta.com, LinkedIn Key insight: iGaming sector is 30-35% of Malta&apos;s professional market.
+Kindred, EvolutionGaming, Betsson, LeoVegas all hire multilingual CS, KYC, VIP account management, sales.
+Work permit reference: Single Permit (employer-sponsored), 4-6 weeks processing Email tone: Casual direct.
+Hi {first_name}.
+4 sentences max.
+English only.
+Salary context: Entry А1,500-2,200/month.
+COL index 70.
+Germany Primary job boards: stepstone.de, xing.de, XING Jobs, linkedin.com, indeed.de XING importance: Critical for Mittelstand companies, food industry, manufacturing, consulting, companies with 45+ decision-makers.
+Use alongside LinkedIn.
+Work permit reference: Chancenkarte application in progress Ч available from [MONTH].
+Only country where Chancenkarte is mentioned.
+Email tone: Formal for traditional companies.
+Startup-friendly for Berlin/Hamburg tech.
+Route by company type.
+Cover letter: German companies: Bewerbungsanschreiben format mandatory.
+Betreff, formal Sie, Mit freundlichen Grьяen.
+Salary context: Entry А2,500-3,500/month.
+COL index 75.
+OTE with commission А45-65k.
+Spontaneous application: &apos;Initiativbewerbung&apos; is culturally expected and respected.
+Subject: &apos;Initiativbewerbung Ч Vertrieb / [Name]&apos; Netherlands Primary job boards: linkedin.com, werkzoeken.nl, indeed.nl Work permit reference: Highly Skilled Migrant visa (Kennismigrant) Ч IND processing 2-4 weeks.
+Eligible for 30% tax ruling.
+30% ruling: Always mention in cover letter last paragraph: &apos;I&apos;m eligible for the 30% ruling as an incoming skilled migrant.&apos; Dutch companies advertise this as a benefit Ч referencing it signals market knowledge.
+Email tone: Direct and informal.
+First-name basis from first email.
+Hi {first_name}.
+4 sentences max.
+Excessive formality reads as rigid.
+No labor market test: Key advantage: employer does not need to prove no EU candidate available.
+Fastest Western EU work permit after offer.
+IND sponsor check: Ask explicitly in every interview: &apos;Is your company a registered IND sponsor?&apos; If not registered, it adds 3 months.
+Salary context: Entry А2,800-4,000/month.
+COL index 85.
+30% ruling significantly improves net.
+Section 15 Ч New Features Interview Preparation Module Trigger: When application status changes to &apos;interview&apos; Dependencies: interviews table, Gemini API, company_research cached async function generateInterviewPrepKit(applicationId) { const { application, company, job } = await fetchContext(applicationId); const kit = await callLLM(&apos;gemini&apos;, ` Interview prep kit for Najd Salhi.
+Role: ${job.title} at ${company.name} (${job.country}) JD: ${job.description} Company: ${company.ai_hook} Return JSON: { likely_questions: [{ question, star_outline, time_target_seconds:90 }], company_knowledge_checklist: [&apos;...&apos;], salary_anchor: { market_range, first_ask, minimum, negotiation_script }, questions_to_ask: [&apos;Specific intelligent question for this company&apos;], red_flags: [&apos;Thing that would make this a bad fit&apos;], opening_90_seconds: &apos;Exact script for opening the call&apos; }`, VOICE_SYSTEM_PROMPT ); await supabase.from(&apos;interviews&apos;) .update({ prep_kit_generated:true, prep_kit_json:JSON.parse(kit) }) .eq(&apos;application_id&apos;, applicationId); await telegram.send(`?? Interview prep ready for ${company.name} ? /interviews`); } Voice Interview Practice // Browser-native Web Speech API Ч zero additional cost or infrastructure // React component in dashboard Ч /interviews page const VoicePractice = ({ question, starOutline, targetSeconds }) =&gt; { const [recording, setRecording] = useState(false); const [transcript, setTranscript] = useState(&apos;&apos;); const [feedback, setFeedback] = useState(null); const startRecording = () =&gt; { const recognition = new window.SpeechRecognition(); recognition.lang = &apos;en-US&apos;; recognition.continuous = true; recognition.onresult = (e) =&gt; { setTranscript(Array.from(e.results).map(r=&gt;r[0].transcript).join(&apos; &apos;)); }; recognition.start(); setRecording(true); }; const evaluate = async () =&gt; { const fb = await fetch(&apos;/api/evaluate-answer&apos;, { method:&apos;POST&apos;, body: JSON.stringify({ question, answer:transcript, star_expected:starOutline }) }).then(r=&gt;r.json()); // fb: { score:1-10, used_star:bool, too_long:bool, missed_point, improved_answer } setFeedback(fb); }; }; // Cost: ~$0.01/session via Gemini API.
+Build time: half a day.
+Salary Negotiation Assistant Trigger: When offers status changes to any non-pending value async function generateNegotiationPlan(offerId) { const offer = await getOffer(offerId); const market = COUNTRY_SALARY_CONTEXT[offer.country]; const plan = await callLLM(&apos;gemini&apos;, ` Salary negotiation plan for Najd Salhi.
+Offer: ${offer.base_salary} ${offer.currency}/month Role: ${offer.role} in ${offer.country} Market: entry ${market.entry[0]}-${market.entry[1]} EUR/month equivalent Return JSON: { assessment, target_ask, walk_away, strategy, counter_offer_email, verbal_talking_points, response_if_pushed_back }`, VOICE_SYSTEM_PROMPT ); await supabase.from(&apos;offers&apos;) .update({ negotiation_plan_json:JSON.parse(plan) }) .eq(&apos;id&apos;, offerId); } Offer Comparison Tool Ч EUR/TND Live Rate // React component Ч /offers page // Free exchangerate-api.com for live EUR/TND rate const COUNTRY_DATA = { Romania: { tax:0.87, living:650, coi:42 }, Poland: { tax:0.82, living:1100, coi:65 }, Malta: { tax:0.80, living:1400, coi:70 }, Germany: { tax:0.75, living:1800, coi:75 }, Netherlands: { tax:0.72, living:2000, coi:85 }, }; const enrich = (offer, eurTnd) =&gt; { const d = COUNTRY_DATA[offer.country]; const net = offer.amount * d.tax; const savings = Math.max(0, net - d.living) * 0.7; return { netMonthly: net, estimatedSavings: savings, savingsInTND: eurTnd ?
+savings * eurTnd : null, purchasingPowerIndex: (net/d.living) / (2000*0.82/1100), }; }; Network Mapping Ч Warm Connections // One-time analysis using LinkedIn CSV export (within ToS) // Settings &gt; Data Privacy &gt; Get a copy of your data &gt; Connections async function analyzeNetwork(csvPath) { const connections = await parseLinkedInCSV(csvPath); // CSV has: First Name, Last Name, Email Address, Company, Position, Connected On const { data: targets } = await supabase .from(&apos;jobs&apos;).select(&apos;company, company_domain&apos;).gte(&apos;ai_score&apos;, 7); const warm = connections.filter(c =&gt; targets.some(t =&gt; c.Company?.toLowerCase().includes(t.company?.toLowerCase()) ) ); // Insert as warm contacts Ч skip cold email sequence entirely for (const c of warm) { await supabase.from(&apos;contacts&apos;).upsert({ name: `${c[&apos;First Name&apos;]} ${c[&apos;Last Name&apos;]}`, company: c.Company, title: c.Position, outreach_status: &apos;warm&apos;, // Different queue Ч direct DM, no email sequence warm_connection: true, vip: true }); } await telegram.send(`Found ${warm.length} warm connections at target companies`); } Calendar Integration Ч Real Availability // Google Calendar OAuth Ч free for personal use // Replaces hardcoded &apos;Tuesday 10am or Thursday 2pm&apos; call time proposals async function getAvailableSlots(contactCountry) { const tz = COUNTRY_TIMEZONE[contactCountry]; const events = await googleCalendar.events.list({ calendarId: &apos;primary&apos;, timeMin: nextMonday().toISOString(), timeMax: addDays(nextMonday(), 7).toISOString(), singleEvents: true, orderBy: &apos;startTime&apos; }); const freeSlots = findFreeSlots(events.data.items, tz, &apos;09:00&apos;, &apos;17:00&apos;, 60); return freeSlots.slice(0,2).map(s =&gt; formatSlotForEmail(s, tz)); // Returns: [&apos;Tuesday 17 June, 10:00 CET&apos;, &apos;Thursday 19 June, 14:00 CET&apos;] // Actual availability, not hardcoded.
+Updated every call.
+} Section 16 Ч Intelligence Layer Email Performance Feedback Ч Every Monday 09:00 async function weeklyEmailLearning() { // Fetch Resend stats for last 14 days const stats = await resend.emails.list({ limit:500 }); const openRate = stats.filter(e=&gt;e.opened_at).length / stats.length; const replyRate = stats.filter(e=&gt;e.replied).length / stats.length; // Analyze subject line performance (A vs B variants) const aStats = stats.filter(e=&gt;e.subject_variant===&apos;A&apos;); const bStats = stats.filter(e=&gt;e.subject_variant===&apos;B&apos;); const aOpenRate = aStats.filter(e=&gt;e.opened_at).length / aStats.length; const bOpenRate = bStats.filter(e=&gt;e.opened_at).length / bStats.length; const analysis = await callLLM(&apos;gemini&apos;, `Analyse these email stats and give 3 specific improvements:\n${JSON.stringify({openRate,replyRate,aOpenRate,bOpenRate})}`, &apos;You are analyzing email campaign data.
+Return actionable JSON.&apos; ); await supabase.from(&apos;prompt_performance&apos;).insert({ period_start:fourteenDaysAgo(), period_end:today(), ...JSON.parse(analysis) }); await telegram.send(`?? 14-day email review:\n${JSON.parse(analysis).summary}`); } Job Score Learning Ч Monthly Retrospective // Monthly: which score buckets actually converted to interviews?
+// If score-6 converts better than score-8: lower the auto-apply threshold async function retrospectiveScoring() { const { data } = await supabase .from(&apos;applications&apos;) .select(&apos;*, jobs(ai_score,cv_track,country)&apos;) .in(&apos;status&apos;,[&apos;interview&apos;,&apos;offer&apos;,&apos;rejection_post_review&apos;]) .gte(&apos;submitted_at&apos;, thirtyDaysAgo()); const byScore = {}; data.forEach(a =&gt; { const s = a.jobs.ai_score; byScore[s] = byScore[s] || { applied:0, interviews:0 }; byScore[s].applied++; if ([&apos;interview&apos;,&apos;offer&apos;].includes(a.status)) byScore[s].interviews++; }); // Find best-converting score band const best = Object.entries(byScore) .sort((a,b) =&gt; (b[1].interviews/b[1].applied) - (a[1].interviews/a[1].applied))[0]; await telegram.send(`?? Best converting score this month: ${best[0]}\n` + `Conversion: ${(best[1].interviews/best[1].applied*100).toFixed(1)}%`); } Hiring Window Prediction // Monthly: predict which companies will open roles next quarter async function predictHiringWindows() { const { data:companies } = await supabase .from(&apos;company_research&apos;) .select(&apos;domain,name,posting_history&apos;) .not(&apos;posting_history&apos;,&apos;is&apos;,null); for (const co of companies) { const hist = co.posting_history; // {&apos;2025-Q1&apos;:3,&apos;2025-Q2&apos;:0,...} const nextQ = currentQuarter(); const sameQLastYear = hist[sameQuarterLastYear()] || 0; if (sameQLastYear &gt;= 3) { await createTask(&apos;proactive_outreach&apos;, `Proactive outreach: ${co.name} enters predicted hiring window`, `Historically active this quarter.
+Reach out before role is posted.`, twoWeeksFromNow(), &apos;high&apos; ); } } } Section 17 Ч Day in the Life What actually happens on a typical day when JobFlow is fully running.
+Tuesday, month 3 of operation.
+The Automated Night (00:00 - 07:00) ? 00:00 Ч Analytics rollup cron fires.
+Yesterday&apos;s stats written to analytics_daily.
+? 02:00 Ч GDPR purge cron runs.
+Contacts unreachable for 90 days are anonymised.
+? 05:00 UTC (07:00 local) Ч Job discovery engine fires.
+Apify scrapes 6 boards in parallel.
+Hermes scores 47 new listings.
+12 score 7+, auto-queued.
+8 score 5-6, flagged for manual review.
+27 discarded.
+? 06:00 UTC Ч Application generator fires.
+12 queued jobs processed.
+Research agent runs for each company.
+Gemini generates 12 CV summaries and 12 cover letters.
+Puppeteer renders 12 PDFs.
+All stored in R2.
+? 06:30 UTC Ч Personal hook candidates generated (3 options per application).
+Stored in applications.personal_hook_options.
+Morning (07:00 - 09:00) ? 08:30 UTC Ч Daily task manager fires.
+Compiles task list.
+Telegram message arrives on phone: ? ?? JOBFLOW Ч Tuesday 17 June ? ?? 12 applications ready to submit ? ?? 10 LinkedIn connections queued ? ?? 2 replies to handle (1 positive, 1 OOO) ? ?? 1 interview today at 14:00 CET ? ? jobflow.najdsalhi.com ? 08:35 Ч You open dashboard.
+Home screen shows today&apos;s 25 tasks in priority order.
+? 08:36 Ч First task: reply to the positive email from Choco&apos;s talent team.
+Gemini drafted a response proposing Tuesday 10am or Thursday 2pm (pulled from your actual calendar).
+You read it, approve, it sends.
+? 08:40 Ч OOO task: system extracted return date June 23.
+Follow-up task auto-scheduled for June 24.
+? 08:42 Ч You work through application submissions.
+For each: cover letter is pre-written, CV is pre-rendered.
+You read the 3 hook options, pick the best one or edit it (15 seconds).
+Hit submit.
+Browser opens the portal or email client with everything pre-filled.
+? 09:15 Ч 12 applications submitted.
+10 LinkedIn connection requests reviewed and sent manually (took 8 minutes).
+Dashboard shows 0 critical tasks remaining.
+Automated Day (09:00 - 17:00) ? 09:00 Ч Resend sends today&apos;s queued cold email sequences automatically.
+23 emails go out across the day in randomized windows.
+All include GDPR footer.
+? 11:23 Ч Telegram: ?? REPLY from recruiter at Teleperformance Romania.
+Sentiment: positive.
+Intent: wants call.
+Draft reply generated.
+You approve in 45 seconds.
+? 13:45 Ч Telegram: interview in 15 minutes.
+Prep kit reminder with opening 90 seconds script.
+? 14:00 Ч Interview at Docplanner Warsaw.
+You ran through 3 mock questions with the voice practice tool at 13:30.
+Evening (17:00 - 20:00) ? 17:30 Ч 3 more email replies arrived during the day.
+Handle them in 5 minutes from dashboard.
+? 19:00 (Sunday only) Ч You send 5 bullet points about your week to the Telegram bot: &apos;/weekly: Got a callback from Choco, Goethe B2 mock 81%, Aldren waitlist hit 15, interesting Wifak interaction, read article about Warsaw food tech expansion&apos;.
+Bot confirms receipt.
+? 20:00 (Sunday only) Ч Weekly content cron fires.
+3 LinkedIn posts generated from your bullets.
+Scheduled for Mon/Wed/Fri.
+7 X posts scheduled via Buffer.
+Total Time Spent Activity Time Notes Reviewing and submitting applications 15-20 min Personal hook is the only manual part Sending LinkedIn connections 5-8 min Pre-queued, you just click send Handling email replies 5-10 min AI drafts, you approve or edit Interview prep (on interview days) 30 min Voice practice + kit review Weekly content input (Sunday only) 5 min 5 bullets to Telegram bot TOTAL (non-interview days) 30-38 min TOTAL (interview days) 60-68 min Section 18 Ч Design System Two design contexts: the platform dashboard (internal tool, productivity-focused) and the landing page (public-facing, conversion-focused).
+Both use the same underlying token system.
+Platform Dashboard Ч Based on Notion Design Language The dashboard uses Notion&apos;s warm, paper-calm aesthetic adapted for dark mode.
+Clean, functional, no decorative elements.
+Every pixel serves a purpose.
+Color Tokens Ч Platform // Adapted from the Notion design system to dark mode export const PLATFORM_TOKENS = { // Canvas background: &apos;#0D0D1A&apos;, // Dark navy Ч primary background surface: &apos;#13131F&apos;, // Slightly lighter Ч cards, panels surface2: &apos;#1A1A2E&apos;, // Elevated surfaces border: &apos;#2A2A3E&apos;, // Subtle borders // Text (Notion ink palette adapted) textPrimary: &apos;#F6F5F4&apos;, // Off-white Ч main text textSecondary:&apos;#A39E98&apos;, // Muted Ч secondary text (Notion ink-faint) textMuted: &apos;#615D59&apos;, // Very muted Ч timestamps, metadata // Accent (Notion blue adapted to orange for JobFlow brand) accent: &apos;#FF5500&apos;, // Primary orange Ч CTAs, active states accentHover: &apos;#CC4400&apos;, // Pressed/hover state accentMuted: &apos;#FF550015&apos;, // Transparent accent Ч backgrounds // Status success: &apos;#1AAE39&apos;, // Green (Notion accent-green) warning: &apos;#DD5B00&apos;, // Orange (Notion accent-orange) error: &apos;#C0392B&apos;, // Red info: &apos;#1A73E8&apos;, // Blue // Priority levels critical: &apos;#C0392B&apos;, high: &apos;#E67E22&apos;, medium: &apos;#1A73E8&apos;, low: &apos;#1AAE39&apos;, }; Typography Ч Platform // Notion Inter scale adapted for dashboard export const PLATFORM_TYPE = { pageTitle: { size:&apos;32px&apos;, weight:700, tracking:&apos;-1px&apos; }, sectionHead:{ size:&apos;22px&apos;, weight:700, tracking:&apos;-0.25px&apos; }, cardTitle: { size:&apos;16px&apos;, weight:600, tracking:&apos;-0.125px&apos; }, body: { size:&apos;15px&apos;, weight:400, lineHeight:&apos;1.5&apos; }, caption: { size:&apos;13px&apos;, weight:400, color:&apos;textSecondary&apos; }, mono: { family:&apos;JetBrains Mono&apos;, size:&apos;13px&apos; }, button: { size:&apos;14px&apos;, weight:500, tracking:&apos;0&apos; }, }; Component Patterns Ч Platform ? Cards: surface background, 8px radius (Notion rounded.md), 1px border in border color, 24px padding ? Buttons primary: accent background, white text, 9999px radius (Notion full), 4px 14px padding ? Buttons secondary: surface2 background, textPrimary text, same radius ? Task items: left border accent color for high priority, green for completed, full width, 12px vertical padding ? Status badges: pill shape (9999px), eyebrow typography (12px 600 weight), background accentMuted ? Data tables: alternating surface/surface2 rows, no horizontal scroll on mobile, sticky first column ? Priority tags: colored text only, no background Ч critical=red, high=orange, medium=blue, low=green Landing Page Ч Based on Galileo/Fintech Aesthetic The landing page uses the dark navy/purple gradient aesthetic from the reference screenshot.
+High contrast, bold typography, colorful accent cards on dark background.
+Color Tokens Ч Landing Page export const LANDING_TOKENS = { // Background gradient (Galileo-style) heroBg: &apos;linear-gradient(135deg, #0A0A1A 0%, #1A0A2E 50%, #0A1A2E 100%)&apos;, sectionBg: &apos;#0D0D1A&apos;, cardBg: &apos;#13131F&apos;, // Brand primary: &apos;#FF5500&apos;, secondary: &apos;#1A73E8&apos;, // Galileo-style accent colors for feature cards card1: &apos;#FF5500&apos;, // Orange card2: &apos;#8B5CF6&apos;, // Purple card3: &apos;#06B6D4&apos;, // Cyan card4: &apos;#10B981&apos;, // Teal card5: &apos;#F59E0B&apos;, // Amber // Text heroText: &apos;#FFFFFF&apos;, bodyText: &apos;#A39E98&apos;, }; Landing Page Sections ? Hero: dark gradient background, large bold headline, subtitle, two CTAs (Start Free / See How It Works) ? Social proof bar: logos or names of target companies (Choco, Concentrix, Teleperformance, etc.) ? Feature cards: 5 colorful cards on dark background Ч one per core module.
+Galileo card aesthetic.
+? How it works: 3-step numbered flow with icons ? Country coverage: flag cards for Poland, Romania, Malta, Germany, Netherlands ? Pricing: single plan card or free tier callout ? Footer: dark, minimal, links Section 19 Ч OpenCode Build Guide This section is written specifically for building JobFlow using OpenCode with Supabase, Render, and Cloudflare MCPs connected.
+Each phase tells you exactly what prompt to use, what files to attach, and which MCP to activate.
+Before Starting Ч OpenCode Setup ? Confirm all 3 MCPs are connected: Supabase, Render, Cloudflare ? Create a new GitHub repo: jobflow-platform ? Create a Supabase project at supabase.com Ч free tier ? Create a Cloudflare account Ч free ? Get API keys: GEMINI_API_KEY (aistudio.google.com), GROQ_API_KEY (console.groq.com), TELEGRAM_BOT_TOKEN (BotFather) ? Order Hetzner CAX11 Ч А4.51/month, choose Ubuntu 24.04, Frankfurt or Helsinki region Phase 1 Ч Supabase Schema (Week 1, Day 1-2) MCP to use: Supabase Files to attach: This document (Section 4 Ч Database Schema) OpenCode prompt to paste: I&apos;m building JobFlow, an automated job application platform.
+Using the Supabase MCP, create all the database tables from Section 4 of the attached spec.
+Run each CREATE TABLE statement in order: jobs, applications, interviews, offers, contacts, email_sequences, company_research, cv_templates, visa_tracker, certifications_tracker, analytics_daily, content_queue, daily_tasks, system_health, prompt_performance.
+Then enable Row Level Security on every table and add the policies specified.
+Then add all the indexes.
+Then schedule the GDPR purge cron using pg_cron.
+Confirm each table was created successfully before moving to the next.
+Phase 1 Ч Next.js Scaffold (Week 1, Day 3-4) MCP to use: Cloudflare Files to attach: This document (Section 2 Ч Stack, Section 18 Ч Design System) OpenCode prompt to paste: Scaffold a Next.js 14 app for JobFlow using the design tokens from Section 18.
+Use Tailwind CSS and shadcn/ui.
+Create the following pages with placeholder content: / (home/dashboard), /pipeline, /jobs, /outreach, /interviews, /offers, /visas, /certs, /analytics, /settings/health, /settings/cv-tracks.
+Use the platform color tokens from Section 18: background #0D0D1A, surface #13131F, accent #FF5500, text #F6F5F4.
+Connect Supabase client using environment variables.
+Deploy to Cloudflare Pages using the Cloudflare MCP.
+Phase 2 Ч Job Discovery (Week 2) MCP to use: Cloudflare (Workers) + Supabase Files to attach: This document (Section 5 Ч Module 1, Section 3 Ч Agent Architecture) OpenCode prompt to paste: Build the Job Discovery Engine from Section 5 of the spec.
+Create a Cloudflare Worker that: 1) runs on cron trigger every day at 05:00 UTC, 2) calls Apify to scrape the job boards listed in the QUERIES object for each country, 3) wraps all Apify calls in the retry function with exponential backoff, 4) sends each job description to the local Hermes inference endpoint (for development, use Groq as Hermes isn&apos;t running yet Ч model: llama-3.1-8b-instant), 5) inserts scored jobs to Supabase jobs table, 6) sends a Telegram summary.
+Deploy via Cloudflare MCP.
+Phase 3 Ч Application Generator (Week 3-4) MCP to use: Supabase + Cloudflare Files to attach: This document (Section 7 Ч Module 3, Section 12 Ч Prompts) OpenCode prompt to paste: Build the Application Generator from Section 7.
+Create: 1) A Cloudflare Worker cron at 06:00 UTC that fetches jobs with status=&apos;queued&apos; from Supabase, 2) For each job: call the company research function (4-tier fallback chain from Section 6), then generate CV summary and cover letter using the prompts from Section 12 via Gemini 2.0 Flash API, then generate 3 personal hook options, 3) Store all outputs in Supabase applications table with status=&apos;ready&apos;, 4) Build the application review page at /pipeline in the Next.js dashboard showing: cover letter text, 3 hook radio buttons with edit field, hard validation blocking submission if no hook selected.
+Phase 4 Ч Outreach Engine (Week 5-6) MCP to use: Cloudflare + Supabase Files to attach: This document (Section 8 Ч Module 4, Section 12 Ч Email Prompts) OpenCode prompt to paste: Build the Cold Outreach Engine from Section 8.
+Create: 1) Hunter.io integration to find emails by domain, 2) 4-tier contact discovery fallback (Hunter ? Apollo ? pattern guess ? LinkedIn DM task), 3) Email generation using EMAIL_1_PROMPT from Section 12 Ч always include GDPR footer and correct country permit reference, 4) Store email_1_body in email_sequences table, 5) Email sending via Resend API with the human send pattern config (day-of-week varied windows, randomized delays), 6) Webhook receiver Cloudflare Worker for Resend reply events, 7) Reply handler from Section 9 including language detection and multi-contact suppression.
+Phase 5 Ч Hetzner Setup (Week 7) MCP to use: None Ч manual SSH Files to attach: This document (Section 2 Ч Hetzner Server) OpenCode prompt to paste: Write a complete bash setup script for the Hetzner CAX11 server based on Section 2 of the spec.
+The script should: install Docker, install Ollama and pull hermes3:4b model, start n8n via Docker with persistent volume, install Node.js 20, install Puppeteer with Chrome browser, create the PDF rendering microservice from Section 7 as a Node.js Express server on port 3001, configure UFW firewall to allow only SSH (22) and n8n (5678).
+Also create a systemd service for the PDF server so it restarts on reboot.
+Output the complete script I can run via SSH.
+Phase 6 Ч Features and Intelligence (Week 8-10) MCP to use: Supabase + Cloudflare Files to attach: This document (Section 15, 16) OpenCode prompt to paste: Build the features from Section 15 in this order: 1) Interview prep kit generator Ч trigger on application status change to &apos;interview&apos;, generate kit via Gemini using the prompt in Section 15, store in interviews table, 2) Voice interview practice component in /interviews using Web Speech API, 3) Offer comparison tool in /offers using live EUR/TND rate from exchangerate-api.com, 4) Network mapping function that parses LinkedIn connections CSV and cross-references against jobs table, 5) Google Calendar integration for call time proposals.
+Then build the intelligence layer from Section 16: email performance cron, job scoring retrospective, hiring window prediction.
+Phase 7 Ч Landing Page (Week 11) MCP to use: Cloudflare Files to attach: This document (Section 18 Ч Landing Page), the Galileo screenshot image OpenCode prompt to paste: Build the JobFlow landing page based on the Galileo-style aesthetic from the attached screenshot and the landing page tokens from Section 18.
+Dark navy/purple gradient hero background.
+Sections: 1) Hero with bold headline &apos;Apply to 40 companies a day.
+In 45 minutes.&apos; and two CTAs, 2) Social proof bar with target company names, 3) Five feature cards with colorful backgrounds (orange/purple/cyan/teal/amber) on dark background Ч one per module, 4) &apos;How it works&apos; 3-step flow, 5) Country coverage section with flags for Poland/Romania/Malta/Germany/Netherlands, 6) Simple pricing/free tier section, 7) Footer.
+Deploy to Cloudflare Pages as a separate route or subdomain.
+Section 20 Ч Build Sequence &amp; Timeline Phase Overview Phase Weeks Hours Deliverable 0 Ч Pre-build Before Week 1 2 Accounts created, keys gathered, Hetzner ordered 1 Ч Foundation Week 1-2 20 Database live, dashboard scaffold deployed 2 Ч Discovery Week 3 15 Jobs appearing in dashboard every morning 3 Ч Generation Week 4-5 20 Applications pre-generated daily, hook UI working 4 Ч Outreach Week 6-7 20 Cold emails sending, replies surfacing in Telegram 5 Ч Hetzner Week 7 8 Hermes running, Puppeteer rendering, n8n live 6 Ч LinkedIn Week 8-9 15 Content scheduled, engagement queue running 7 Ч Features Week 9-10 20 Interview prep, offers, visa tracker, network mapping 8 Ч Intelligence Week 11 10 Learning loops, prediction, A/B testing 9 Ч Landing page Week 11 8 Public site live 10 Ч Polish Week 12 10 Mobile optimization, error handling, monitoring TOTAL 12 weeks 148 hours Full platform Phase 0 Ч Pre-Build Checklist 1.
+Create GitHub repo: jobflow-platform.
+Initialize with .gitignore including .dev.vars, .env, *.secret 2.
+Create Supabase project.
+Note: project URL and anon key and service role key.
+3.
+Create Cloudflare account.
+Note: account ID.
+4.
+Get GEMINI_API_KEY at aistudio.google.com Ч free 5.
+Get GROQ_API_KEY at console.groq.com Ч free 6.
+Create Telegram bot via BotFather.
+Get bot token and your chat_id.
+7.
+Create Resend account at resend.com.
+Add and verify najdsalhi.com domain.
+Configure SPF, DKIM, DMARC.
+8.
+Order Hetzner CAX11 at hetzner.com/cloud.
+Ubuntu 24.04.
+Frankfurt region.
+Note IP address.
+9.
+Create Apify account.
+Get API token.
+Free tier $5 compute units.
+10.
+Create Hunter.io account.
+Get API key.
+Free 25 searches/month.
+11.
+Start Resend domain warmup Ч must run 21 days before bulk sending Section 21 Ч Glossary Services Apify: Cloud scraping platform.
+Pre-built actors for LinkedIn Jobs, NoFluffJobs, Stepstone, and other job boards.
+Free $5 compute units/month.
+apify.com Buffer: Social media scheduling tool.
+Posts content to LinkedIn and Twitter on a schedule.
+Free tier: 3 channels, 10 queued posts.
+buffer.com Cloudflare Pages: Static site hosting.
+Deploys Next.js dashboard from GitHub.
+Free unlimited bandwidth.
+pages.cloudflare.com Cloudflare R2: Object storage, S3-compatible.
+Stores generated CV PDFs and weekly database backups.
+Free 10GB.
+cloudflare.com/r2 Cloudflare Workers: Serverless runtime on Cloudflare&apos;s edge network.
+Handles API routes, webhooks, cron triggers.
+Free 100k requests/day.
+workers.cloudflare.com Crunchbase: Startup and company database.
+Basic API provides company descriptions and funding data.
+Free basic tier.
+crunchbase.com DeepSeek V3: Chinese LLM.
+OpenAI-compatible API.
+$0.27/1M input tokens Ч backup when Gemini free tier exhausted.
+api.deepseek.com Gemini 2.0 Flash: Google&apos;s fast multimodal LLM.
+Primary generation model.
+Free tier 1M tokens/day.
+aistudio.google.com Google Calendar API: Read/write access to Google Calendar.
+Powers real availability check for interview scheduling.
+Free for personal use.
+console.cloud.google.com Groq: LPU inference provider.
+Free tier with Llama 3.1 and Gemma 2 models.
+Fast, good at classification.
+console.groq.com Hermes 3: Open-source instruction-following LLM from NousResearch.
+4B parameter version runs on Hetzner via Ollama.
+Zero cost.
+huggingface.co/NousResearch Hetzner CAX11: ARM-based VPS.
+2 vCPU, 4GB RAM, 40GB SSD.
+А4.51/month.
+Hosts n8n, Hermes, Puppeteer.
+hetzner.com Hunter.io: Email address finder.
+Given a company domain, returns likely email format and verified addresses.
+Free 25/month.
+hunter.io n8n: Open-source workflow automation.
+Self-hosted on Hetzner.
+Orchestrates all cron jobs and pipeline workflows.
+n8n.io Ollama: Local LLM runner.
+Provides OpenAI-compatible API for locally hosted models including Hermes 3.
+ollama.ai Puppeteer: Node.js browser automation.
+Renders HTML to PDF.
+Runs on Hetzner as a microservice.
+Cannot run on Cloudflare Workers due to 128MB memory ceiling.
+Resend: Email API with high deliverability.
+Handles cold outreach sequences.
+Free 3k emails/month.
+resend.com Supabase: Hosted PostgreSQL with realtime, auth, edge functions, and pg_cron.
+Free 500MB.
+supabase.com Telegram Bot API: Notification and interaction layer.
+Free unlimited.
+Delivers daily task lists, reply alerts, system failures.
+core.telegram.org/bots Technical Terms ATS: Applicant Tracking System.
+Software used by companies to receive and filter job applications.
+Examples: Greenhouse, Workable, Lever, SAP SuccessFactors.
+Chancenkarte: German Opportunity Card.
+A job-seeking visa for non-EU candidates with recognised degrees.
+Allows 1 year in Germany to find employment.
+Requires А1,027/month proof of funds (Sperrkonto).
+EU Blue Card: Work permit for highly qualified non-EU workers.
+Available in all EU countries including Poland and Romania.
+Requires degree and salary above threshold.
+GDPR: General Data Protection Regulation.
+EU law governing data collection, storage, and processing.
+Requires unsubscribe mechanism in cold emails to EU residents.
+H+ Anabin: German database of foreign qualifications.
+H+ is the highest recognition tier, equivalent to a German Hochschulabschluss (university degree).
+Qualifies for Chancenkarte without points system.
+IND: Immigratie en Naturalisatiedienst.
+Dutch immigration service.
+Processes Highly Skilled Migrant visa applications.
+Employer must be a registered IND sponsor.
+Kennismigrant: Dutch Highly Skilled Migrant visa.
+No labor market test required.
+Salary threshold ~А32,355/year under 30.
+Processing 2-4 weeks once employer files.
+pg_cron: PostgreSQL extension that runs SQL statements on a schedule.
+Used for GDPR purge, analytics rollup, and weekly backups.
+RLS: Row Level Security.
+Supabase/PostgreSQL feature that restricts which rows users can see.
+Every table has a policy: users can only see their own data.
+30% Ruling: Dutch tax benefit for incoming skilled migrants.
+30% of salary is tax-exempt for up to 5 years.
+Significantly increases net income.
+Bewerbungsanschreiben: German cover letter.
+Has mandatory format: Betreff (subject line), formal Sie salutation (Sehr geehrte/r Herr/Frau Nachname), formal closing (Mit freundlichen Grьяen).
+Initiativbewerbung: Unsolicited/spontaneous job application in German culture.
+Culturally expected and respected by German companies.
+Send directly to HR with subject &apos;Initiativbewerbung Ч [Role] Ч [Name]&apos;.
+Appendix Ч All 73 Forensic Findings Reference table.
+All findings are incorporated into the spec above Ч this is for cross-referencing.
+# Dimension Finding Priority Incorporated in 1 Critical Email 2 missing Email 1 context CRITICAL Section 8, Section 12 2 Critical Puppeteer on Workers impossible CRITICAL Section 2, Section 7 3 Critical user_id missing all tables CRITICAL Section 4 4 Critical GDPR non-compliance CRITICAL Section 8, Section 4 5 Critical Zero error handling CRITICAL Section 3, Section 5 6 Prompts Non-English JDs misevaluated HIGH Section 5, Section 12 7 Prompts COMPANY_HOOK hallucinates on sparse data HIGH Section 6 8 Prompts No language detection in reply handler HIGH Section 9, Section 12 9 Prompts Incomplete banned phrase list HIGH Section 12 10 Prompts No German Bewerbung format HIGH Section 12, Section 14 11 Prompts PERSONAL_HOOK bottleneck HIGH Section 7, Section 12 12 Prompts CV track definitions absent from scoring prompt MEDIUM Section 12 13 Prompts All posts end with question MEDIUM Section 12 14 Prompts No LinkedIn comment sensitivity filter MEDIUM Section 10 15 Prompts OOO return date ignored MEDIUM Section 9 16 Schema user_id missing (same as Critical 3) CRITICAL Section 4 17 Schema analytics_daily DATE as PK CRITICAL Section 4 18 Schema No posted_date HIGH Section 4, Section 5 19 Schema No interview/offer tables HIGH Section 4 20 Schema No bounce/spam tracking HIGH Section 4 21 Schema No job_id FK in contacts HIGH Section 4 22 Schema glassdoor unverifiable, missing tech_stack MEDIUM Section 4 23 Schema Missing composite indexes MEDIUM Section 4 24 Schema daily_tasks priority inverted MEDIUM Section 4 25 Schema content_queue opaque engagement_score MEDIUM Section 4 26 Architecture Puppeteer on Workers (same as Critical 2) CRITICAL Section 2, Section 7 27 Architecture No retry on Apify CRITICAL Section 5 28 Architecture No LinkedIn scraper fallback chain HIGH Section 6 29 Architecture CV templates no storage mechanism HIGH Section 4 30 Architecture Contact discovery no fallback HIGH Section 8 31 Architecture Multi-contact same company MEDIUM Section 9 32 Architecture No backlog management MEDIUM Section 11 33 Anti-detect LinkedIn ban risk HIGH HIGH Section 13 34 Anti-detect Fixed send windows fingerprint MEDIUM Section 8 35 Anti-detect PDF metadata reveals AI MEDIUM Section 7 36 Anti-detect Connection notes same structure MEDIUM Section 13 37 Anti-detect Structural AI tells remain MEDIUM Section 13 38 Anti-detect 40% of EU ATS not covered MEDIUM Section 13 39 Anti-detect PERSONAL_HOOK not enforced HIGH Section 7 40 Country Poland: NoFluffJobs missing HIGH Section 5, Section 14 41 Country Poland: Chancenkarte wrong reference HIGH Section 8, Section 14 42 Country Malta: iGaming absent HIGH Section 5, Section 14 43 Country Germany: English cover letter rejected HIGH Section 12, Section 14 44 Country Germany: XING absent MEDIUM Section 5, Section 14 45 Country Netherlands: 30% ruling not mentioned MEDIUM Section 12, Section 14 46 Country Romania: Wrong board priority MEDIUM Section 5, Section 14 47 Country All: Queries too generic MEDIUM Section 5 48 Country Romania: No salary context MEDIUM Section 14, Section 15 49 Features No interview prep module HIGH Section 15 50 Features No visa tracker HIGH Section 4, Section 15 51 Features No negotiation assistant HIGH Section 15 52 Features No network mapping MEDIUM Section 15 53 Features No offer comparison MEDIUM Section 15 54 Features No cert tracker with trigger MEDIUM Section 4 55 Intelligence Email performance not fed back HIGH Section 16 56 Intelligence Job scoring never learns MEDIUM Section 16 57 Intelligence No A/B subject line testing MEDIUM Section 4, Section 8 58 Intelligence Weekly content ignores performance MEDIUM Section 10 59 Intelligence No response speed analysis LOW Section 16 60 Automation Portal auto-fill unimplemented MEDIUM Section 19 61 Automation Connection queue no activity timing MEDIUM Section 10 62 Automation Call times hardcoded MEDIUM Section 15 63 Automation Instantly health not in dashboard MEDIUM Section 16 64 Security GDPR (same as Critical 4) CRITICAL Section 8, Section 4 65 Security .dev.vars not in .gitignore HIGH Section 20 66 Security Service role key bypasses RLS HIGH Section 4 67 Security No backup beyond 7 days HIGH Section 2 68 Security No operational monitoring HIGH Section 11, Section 20 69 Wild Card Voice interview practice MEDIUM Section 15 70 Wild Card Predict hiring windows LOW Section 16 71 Wild Card Analyse candidate profiles at targets MEDIUM Section 6 72 Wild Card EUR/TND purchasing power dashboard MEDIUM Section 15 73 Wild Card Community intel (productisation) LOW Section 4 JOBFLOW v3.0 Ч END OF SPECIFICATION 73 Findings Incorporated from Day One Ј ~А5/month Ј 12 Weeks to Build Ј Najd Salhi Ј 2025
